@@ -170,6 +170,17 @@ def build_batt_shim():
             cq.Workplane("XY").rect(w, d).extrude(h + P.BATT_SHIM_GRIP)
             .edges("|Z").fillet(r)))
 
+    # Notches for the four cover posts.  They flank the cell at (±31.5, 112) and
+    # (±31.5, 142) and reach in to |x| = 29.0, which is 2.0 mm inside this shim's edge --
+    # so without these the shim simply will not go in.  It fitted the mask that was
+    # printed only because that mask had no posts at all; see README, "what it caught".
+    for px, pz in P.POST_XY_BATT:
+        keep = abs(px) - P.POST_OD_BATT / 2 - P.BATT_SHIM_CLR      # = 28.5
+        body = body.cut(cq.Workplane("XY")
+                        .moveTo((keep + w) / 2 * (1 if px > 0 else -1), pz - P.CELL_CZ)
+                        .rect(w - keep, P.POST_OD_BATT + 2 * P.BATT_SHIM_CLR)
+                        .extrude(h + P.BATT_SHIM_GRIP + 1))
+
     # wire gates through both end walls, so the pouch's tabs have somewhere to go
     # whichever way round it is fitted
     for s in (-1, 1):

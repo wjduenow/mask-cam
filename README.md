@@ -186,6 +186,32 @@ defects:
   merged — the mesh came apart into four bodies. Petals are not structural ground.
 - **The USB-C port cut sat at floor depth** instead of on the receptacle's midline, eating
   forward into the muzzle and leaving 1.28 mm of relief.
+- **Every cover post and every board boss was built, then deleted.** `build_mask.py`
+  unioned the pillars into the mask and *then* carved the bay, and the zone cutters span
+  each zone's whole footprint from its floor back to the wall plane — so all 14 pillars
+  were erased by the bay they stood in. The exported mask had cover screw holes with
+  nothing behind them and a board with nothing to sit on, for months, and `verify.py`
+  reported "all checks passed" because it never looked. Walls are added before the carve
+  now and pillars after it; §4b of `verify.py` probes the mesh for all 14 and their
+  pilots.
+- **Two collisions the deleted posts had been hiding.** With the pillars restored, the
+  posts at (±21, 68) turned out to sit **1.56 mm** off the eye-pupil axis — inside a
+  Ø12.6 bore that needs 9.55 mm of clearance — and capped both pupils; and the post at
+  (−21, 36) went straight through the USB-C breakout, leaving gaps of 1.75 and 2.55 mm
+  for a board 4.75 mm thick. The board-zone layout was re-cut around all three claimants
+  (pupils, breakout, cam board), and `check_clearances()` now asserts each one.
+- **The USB-C breakout mount was specified but never built.** `mask_params.py` had the
+  pad, the pilots, the port and the receptacle offsets; `build_mask.py` referenced none
+  of them. It also could not have worked as written: the slab outboard of the pad is
+  **4.87 mm**, not the nominal wall, so the 6 mm pilots would have come out through the
+  cheek — the mask's silhouette runs out before its wall does.
+- **Three measurement bugs found while fixing those.** A pupil diameter measured by
+  line-of-sight through the whole mask reported 11.0 mm for a 12.6 bore, because a boss
+  legitimately stands behind it — it now measures the bore itself. A relief sample cast
+  exactly along the USB-C pad's face grazed it, returned an odd number of crossings, and
+  reported 0.00 mm of relief where there is 19; the sample grid is nudged off round
+  numbers now. And a cutter left flush with that same face made a coplanar pair in the
+  boolean.
 - **The camera clamp was cut to a seat that does not exist.** `CAM_SEAT_Z1` asks for
   z = 102, but the battery zone's floor crosses the waist at z = 97 and sits 20 mm
   *behind* the seat, so the last 5 mm of it is a sealed void inside solid plastic — and
@@ -314,6 +340,13 @@ untouched.
 4. **Fold the excess ribbon** into the plenum. The module ships on a **75 mm** FPC against a
    much shorter path, and it cannot be trimmed — the gold fingers are the termination.
    S-fold it; don't crease it.
+4b. **USB-C breakout** (if you are using one) against the pad on the board bay's −x
+   wall, 2 × M3 × 6 into the pilots at z = 30.7. It stands **on edge**, receptacle
+   pointing **down**, and its mouth nests into the bay's lower wall — the plug reaches it
+   up a channel opened through the back of the chin, which leaves 17.5 mm of relief and
+   is invisible from the front. ⚠ `UC_HOLE_CC`, `UC_HOLE_OFF` and `UC_REC_OFF` are still
+   photo-scaled, not callipered: check the hole spacing against your board before you
+   print, and change them in `mask_params.py` if it differs.
 5. **DWEII module** (25 × 20 mm) into the waist behind the clamp, its 25 mm axis across
    the mask — the 20 mm axis has only 1 mm of clearance in z and the long one will not go.
    Wire its `5V` output pads to J4 `5V`/`GND`, and its `+`/`−` pads to the cell. Its own
@@ -337,7 +370,8 @@ untouched.
 
 | where | qty | screw |
 |---|---|---|
-| cover → posts | 10 | M3 × 8 flat, self-tapping |
+| cover → posts | 9 | M3 × 8 flat, self-tapping |
+| USB-C breakout → pad | 2 | M3 × 6 self-tapping |
 | board → bosses | 4 | M3 × 6 flat, self-tapping |
 | camera clamp | 1 | M2.5 × 6 self-tapping |
 | wall (or the stand's pegs) | 2 | #6 or M4 pan head |
@@ -456,6 +490,8 @@ mask-cam/
                            caught the seat (see below)
     render_preview.py      render_preview.png
     render_smalls.py       smalls.png -- both small parts, in place
+    render_bay.py          bay.png -- every post, boss and the USB-C mount, which is
+                           the picture that would have shown they were missing
 
     analyze_*.py           the provenance: how the donor was measured, why the brow won,
                            and how the 1.75x layout was chosen.  Kept because this

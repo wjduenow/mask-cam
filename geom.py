@@ -86,6 +86,18 @@ def cyl_y(cx, cz, d, y0, y1, sections=96):
     return c
 
 
+def cyl_x(cy, cz, d, x0, x1, sections=96):
+    """Cylinder with its axis along X, spanning x0..x1.
+
+    The USB-C breakout is the only thing here that bolts to a SIDE wall, so its pilots
+    are the only holes that do not run along y.
+    """
+    c = trimesh.creation.cylinder(radius=d / 2, height=x1 - x0, sections=sections)
+    c.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+    c.apply_translation([(x0 + x1) / 2, cy, cz])
+    return c
+
+
 def cone_y(cx, cz, d0, d1, y0, y1, sections=96):
     """Truncated cone along Y: diameter d0 at y0, d1 at y1."""
     t = np.linspace(0, 2 * np.pi, sections, endpoint=False)

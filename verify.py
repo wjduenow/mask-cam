@@ -11,6 +11,10 @@ Checks:
   3  the relief left in front of the bay is >= FRONT_WALL EVERYWHERE, not just at the
      one worst point the plan checked
   4  the bay interior is clear to the depth the board needs
+  4b every cover post and board boss is PRESENT in the mesh and drilled -- they were
+     built and then carved away for months, and only the mesh could have told us
+  4c the USB-C breakout's pad, pilots and plug channel exist, and the channel does not
+     eat the chin's relief
   5  nothing protrudes past the wall plane
 """
 import numpy as np
@@ -78,17 +82,20 @@ for name, (cx, cz), dia in (("brow aperture", (P.LENS_X, P.LENS_Z), P.APERTURE_D
     check(f"{name} bored through",
           len(ys) < len(donor) or len(ys) == 0,
           f"donor had {len(donor)} crossings here, now {len(ys)}")
-    # measure the actual hole diameter by scanning across it
-    r = dia / 2
-    xs_scan = np.arange(cx - r - 1.5, cx + r + 1.5, 0.1)
-    openness = []
-    for x in xs_scan:
-        c = cast(x, cz)
-        openness.append(len(c) < len(cast(x, cz, D)) or len(c) == 0)
-    idx = np.where(openness)[0]
-    meas = (xs_scan[idx[-1]] - xs_scan[idx[0]]) if len(idx) else 0.0
-    check(f"{name} diameter", abs(meas - dia) < 0.6,
-          f"measured {meas:.2f} mm across, drawn {dia} mm")
+    # Measure the BORE, not the line of sight through the whole mask.  Scanning for
+    # "rays that pass clean through" was right only while the bay behind was empty: the
+    # board bosses legitimately stand there, and one of them sits 8.01 mm off the left
+    # pupil's axis, so a through-scan reported an 11.0 mm pupil for a bore that is a full
+    # 12.6.  Ask instead whether the bore itself is open, at depth, all the way round.
+    ring_r = dia / 2 - 0.4
+    th = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+    depths = (-30.0,) if name == "brow aperture" else (-45.0, -30.0)
+    pts = np.array([[cx + ring_r * np.cos(t), yy, cz + ring_r * np.sin(t)]
+                    for yy in depths for t in th])
+    solid = M.contains(pts)
+    check(f"{name} bore is open at Ø{2*ring_r:.1f}", not solid.any(),
+          f"{len(pts)} points on the bore wall at y={depths}, "
+          f"{int(solid.sum())} of them in solid material")
 
 print("\n=== 3. relief left in front of the bay (the safety property) ===")
 # THE property: at every (x, z) over the bay, how much SOLID material lies forward of the
@@ -116,12 +123,20 @@ def solid_forward_of(ys, plane):
     return total
 
 
+# Nudge the sample grid off every round number.  A ray cast EXACTLY along a designed
+# face grazes it, and a grazing hit is counted once instead of twice: the USB-C pad's
+# face sits at x = -22.00, which is dead on this grid's 1.5 mm stride from -25, and the
+# odd crossing made a bay with 19 mm of relief either side of that line report 0.00 on
+# it.  The geometry was never wrong; the ray was.  These offsets are irrational-ish
+# against every dimension in mask_params, so no sample can land on a face again.
+JIG_X, JIG_Z = 0.037, 0.041
+
 worst = (1e9, None)
 slivers = 0
 for hw, z0, z1, floor in ((P.BAY_HW_UP, P.BAY_Z0_UP, P.BAY_Z1_UP, P.FLOOR_Y_UP),
                           (P.BAY_HW_LO, P.BAY_Z0_LO, P.BAY_Z1_LO, P.FLOOR_Y_LO)):
-    for x in np.arange(-hw + 1, hw, 1.5):
-        for z in np.arange(z0 + 1, z1, 1.5):
+    for x in np.arange(-hw + 1, hw, 1.5) + JIG_X:
+        for z in np.arange(z0 + 1, z1, 1.5) + JIG_Z:
             if np.hypot(x - P.LENS_X, z - P.LENS_Z) < P.APERTURE_D / 2 + 1:
                 continue
             if min(np.hypot(x + P.EYE_X, z - P.EYE_Z),
@@ -175,6 +190,96 @@ for x in np.arange(-P.PCB_W / 2 + 1, P.PCB_W / 2, 2.0):
             bad.append((round(x, 1), round(z, 1), round(float(blocking.max()), 2)))
 check("board envelope unobstructed", not bad,
       f"{len(bad)} obstructed sample(s)" + (f", e.g. {bad[:3]}" if bad else ""))
+
+print("\n=== 4b. every fastener has something to fasten INTO ===")
+# ⚠ THE CHECK THAT WAS MISSING.  build_mask.py added all 14 pillars and then carved the
+# bay, which deleted every one of them -- and nothing here looked, so this file printed
+# "all checks passed" for a mask whose cover screws went into thin air and whose board
+# had no bosses.  A plan check cannot catch it: the plan was right.  Only the mesh knows.
+_TH = np.linspace(0, 2 * np.pi, 16, endpoint=False)
+
+
+def _top(x, z):
+    """Height of the first surface a ray from behind meets -- nan if it meets none."""
+    o = np.column_stack([np.atleast_1d(x), np.full(np.size(x), 40.0), np.atleast_1d(z)])
+    loc, idx, _ = M.ray.intersects_location(
+        ray_origins=o, ray_directions=np.tile([0, -1.0, 0], (len(o), 1)),
+        multiple_hits=False)
+    Y = np.full(len(o), np.nan); Y[idx] = loc[:, 1]
+    return Y
+
+
+def _pillar(label, x, z, od, want_top, pilot_d, pilot_len):
+    r = od / 2 - 0.8                       # on the annulus, clear of the pilot bore
+    ring = _top(x + r * np.cos(_TH), z + r * np.sin(_TH))
+    check(f"{label} ({x:+.1f},{z:.0f}) exists",
+          bool(np.all(np.isfinite(ring)) and np.allclose(ring, want_top, atol=0.05)),
+          f"top face y={np.nanmin(ring):.2f}..{np.nanmax(ring):.2f}, want {want_top:.2f}")
+    floor = _top(x, z)[0]
+    check(f"{label} ({x:+.1f},{z:.0f}) is drilled",
+          bool(np.isfinite(floor) and abs((want_top - floor) - pilot_len) < 0.1),
+          f"Ø{pilot_d} pilot {want_top - floor:.2f} mm deep, want {pilot_len:.1f}")
+
+
+for _x, _z in P.POST_XY:
+    _pillar("cover post", _x, _z, P.POST_OD, -P.COVER_T, P.POST_PILOT, P.COVER_SCREW_LEN)
+for _x, _z in P.POST_XY_BATT:
+    _pillar("cover post", _x, _z, P.POST_OD_BATT, -P.COVER_T, P.POST_PILOT,
+            P.COVER_SCREW_LEN)
+for _sx in (-1, 1):
+    for _sz in (-1, 1):
+        _pillar("board boss", P.BOARD_CX + _sx * P.HOLE_DX / 2,
+                P.BOARD_CZ + _sz * P.HOLE_DY / 2, P.BOSS_OD, P.BOARD_SEAT_Y,
+                P.BOSS_PILOT, P.BOARD_SCREW_LEN)
+
+print("\n=== 4c. the USB-C breakout has somewhere to bolt to ===")
+# Never built at all until 2026-08-19: mask_params specified the whole mount and
+# build_mask.py referenced none of it, so the part had a pad, pilots and a port on paper
+# and nothing in plastic.
+
+
+def _first_along_x(y, z, from_x=0.0, to_x=-40.0):
+    o = np.array([[from_x, y, z]])
+    d = np.array([[-1.0 if to_x < from_x else 1.0, 0.0, 0.0]])
+    loc, _, _ = M.ray.intersects_location(ray_origins=o, ray_directions=d,
+                                          multiple_hits=True)
+    return np.max(loc[:, 0]) if len(loc) else np.nan
+
+
+_face = _first_along_x(P.UC_MID_Y, (P.BAY_Z0_UP + P.UC_REAR_Z) / 2)
+check("the mounting pad is at UC_FACE_X", abs(_face - P.UC_FACE_X) < 0.05,
+      f"first material inboard of the -x wall at x={_face:.2f}, want {P.UC_FACE_X:.2f}")
+
+for _s in (-1, 1):
+    _y = P.UC_MID_Y + _s * P.UC_HOLE_CC / 2
+    _end = _first_along_x(_y, P.UC_PILOT_Z)
+    check(f"breakout pilot at y={_y:+.2f} is bored",
+          abs(_end - (P.UC_FACE_X - P.UC_PILOT_DEPTH)) < 0.15,
+          f"blind end at x={_end:.2f}, want {P.UC_FACE_X - P.UC_PILOT_DEPTH:.2f} "
+          f"({P.UC_PILOT_DEPTH:.1f} mm of Ø{P.UC_PILOT} thread)")
+
+# the plug's channel: over the receptacle's own cross-section, the y band it needs must
+# be empty all the way up to the mouth
+_py0, _py1 = P.UC_MID_Y - P.UC_PORT_W / 2, P.UC_MID_Y + P.UC_PORT_W / 2
+_blocked, _thin = [], 9e9
+for _z in np.arange(P.UC_PORT_Z0 + 1.0, P.BAY_Z0_UP, 0.5):
+    for _x in np.arange(P.UC_REC_X - P.UC_PORT_H / 2 + 0.2,
+                        P.UC_REC_X + P.UC_PORT_H / 2 - 0.1, 0.4):
+        _o = np.array([[_x, 60.0, _z]])
+        _loc, _, _ = M.ray.intersects_location(
+            ray_origins=_o, ray_directions=np.array([[0, -1.0, 0]]), multiple_hits=True)
+        if len(_loc) < 2:
+            continue
+        _ys = np.sort(_loc[:, 1].ravel())
+        if np.any((_ys > _py0 + 0.05) & (_ys < _py1 - 0.05)):
+            _blocked.append((_x, _z))
+        _thin = min(_thin, _py0 - _ys[0])
+check("the plug's channel is clear to the mouth", not _blocked,
+      f"{len(_blocked)} blocked sample(s)" if _blocked
+      else f"open over x ±{P.UC_PORT_H/2:.1f}, y {_py0:.2f}..{_py1:.2f}, "
+           f"z {P.UC_PORT_Z0:.0f}..{P.BAY_Z0_UP:.0f}")
+check("the port channel keeps FRONT_WALL relief", _thin >= P.FRONT_WALL,
+      f"thinnest {_thin:.2f} mm of chin left in front of it (design min {P.FRONT_WALL})")
 
 print("\n=== 5. the donor's own surface is untouched outside the bay ===")
 # Sample the face well away from anything we cut, and confirm the front surface has not

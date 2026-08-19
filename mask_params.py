@@ -354,8 +354,23 @@ COVER_CSK_ANG = 90.0
 # Four beside the board, two in the waist, and two flanking the cell.  The battery pair
 # uses a SMALLER post (POST_OD_BATT) because the 58 mm cell pocket leaves only 5 mm of
 # clear width each side of it -- a Ø6.5 column would foul the cell.
-POST_XY = [(-21.0, 36.0), (21.0, 36.0), (-21.0, 68.0), (21.0, 68.0),
-           (-20.0, 78.0), (20.0, 78.0)]
+# ⚠ THREE THINGS COMPETE FOR THIS ZONE and the old layout lost to two of them silently,
+# because build_mask.py deleted every post before anything could measure the collision:
+#
+#   * the EYE PUPILS bore through at (±19.93, 69.14), Ø12.6.  Posts at (±21, 68) sat
+#     1.56 mm off that axis -- entirely INSIDE the bore -- and capped both pupils.  A post
+#     needs EYE_PUPIL_D/2 + POST_OD/2 = 9.55 mm of centre distance to clear one.
+#   * the USB-C BREAKOUT stands on edge against the -x wall over z 26.5..41.  A post at
+#     (-21, 36) went straight through it, and the free gaps either side of that post were
+#     1.75 and 2.55 mm against a board 4.75 mm thick.  So the -x side gives up its lower
+#     post: the breakout is worth more there than a fifth anchor.
+#   * the cam BOARD fills x ±15.2 over z 32.8..71.2, which is why every post is outboard
+#     of |x| = 18.45.
+#
+# What is left: z 44.25..59.65 is the only window on the -x side that clears both the
+# breakout below and the pupil above.  check_clearances() now asserts all three.
+POST_XY = [(21.0, 36.0), (-21.0, 56.0), (21.0, 56.0),
+           (-20.0, 79.5), (20.0, 79.5)]
 POST_XY_BATT = [(-31.5, 112.0), (31.5, 112.0), (-31.5, 142.0), (31.5, 142.0)]
 POST_OD_BATT = 5.0
 
@@ -383,9 +398,24 @@ UC_REAR_Z  = UC_MOUTH_Z + UC_D                # = 33.0, board's rear edge (bay t
 # bay's side wall, where the muzzle thins to 18.42 mm proud -- it left 2.75 mm of relief
 # against the 3.00 required, and both check_clearances() and verify.py rejected it.
 # Standing the board 2 mm inboard puts the port over 21.67 mm of material instead.
-UC_FACE_X  = -BAY_HW_LO + 3.0                 # the mounting face (clear of the posts)
-UC_PAD_T   = 3.0      # local thickening of that wall so the pilots get real material
+# 4.0 rather than 3.0, and the pilots 5.0 rather than 6.0, because MEASURED on the mesh
+# the slab outboard of this face is only 4.87 mm at the pilots' z -- the mask's own
+# silhouette runs out before the nominal wall does, so a 6 mm pilot came out of the side
+# of the cheek.  A thicker pad buys the thread back without pushing the board into the
+# cam board: it still clears it by 2.05 mm.
+UC_PAD_T   = 4.0      # local thickening of that wall so the pilots get real material
+UC_FACE_X  = -BAY_HW_LO + UC_PAD_T            # the mounting face (clear of the posts)
 UC_PORT_W, UC_PORT_H = 10.0, 4.4              # receptacle opening + clearance
+UC_PILOT_DEPTH = 5.0                          # into the pad, NOT out the other side
+UC_PILOT_Z = UC_MOUTH_Z + UC_HOLE_OFF         # = 30.7, both pilots share this z
+UC_REC_X   = UC_FACE_X + UC_REC_OFF           # = -19.8, the receptacle's centreline
+# The plug arrives from BELOW, so the chin's rear shell has to be scooped back over the
+# port's width until it clears the receptacle's own envelope.  MEASURED on the mesh: the
+# shell's rear face runs y = -13.4..-15.5 at z 26 and falls away to -17 by z 18, so the
+# scoop is ~2.2 mm deep at its worst and stops mattering below z 18.  It leaves 9.04 mm
+# of relief at the thinnest point, against the 3.00 FRONT_WALL requires -- this is the
+# back of the chin, nowhere near the face.
+UC_PORT_Z0 = 14.0     # how far down the chin the plug's channel is opened
 # The board stands on edge, its 21.4 mm axis spanning the bay's DEPTH, so the receptacle
 # -- centred on that axis -- lands mid-depth, not at the floor.  Everything that has to
 # line up with it (the port, both pilots) is measured from here.

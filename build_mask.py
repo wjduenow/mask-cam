@@ -19,7 +19,7 @@ import numpy as np
 import trimesh
 
 import mask_params as P
-from geom import (rrect_prism, extrude_y, cyl_y, union, difference,
+from geom import (rrect_prism, extrude_y, cyl_x, cyl_y, union, difference,
                   intersection, silhouette_polygon, report)
 from mask_frame import load_mask
 from measure import standoff_min_rect, standoff_min_disc, rear_depth_max, root_y
@@ -90,6 +90,33 @@ def check_clearances():
              and not (P.LENS_Z - P.CAM_POCKET/2 < pz < P.LENS_Z + P.CAM_POCKET/2),
              f"a pilot outside the open seat, or inside the pocket, is one you cannot "
              f"put a screwdriver on")
+
+    # ⚠ The two collisions the deleted posts were hiding.  Both are cheap to state and
+    # neither was stated before, which is why both survived into a printed mask.
+    for x, z in P.POST_XY:
+        for sx in (-1, 1):
+            d = ((x - sx * P.EYE_X) ** 2 + (z - P.EYE_Z) ** 2) ** 0.5
+            need = P.EYE_PUPIL_D / 2 + P.POST_OD / 2
+            must(f"cover post ({x:+.1f},{z:.0f}) clear of the {'right' if sx > 0 else 'left'} pupil",
+                 d >= need,
+                 f"centres {d:.2f} mm apart, need {need:.2f} -- a post inside a pupil bore "
+                 f"caps it, and the bore is what makes the eye read black")
+    ucx0, ucx1 = P.UC_FACE_X, P.UC_FACE_X + P.UC_T
+    for x, z in P.POST_XY:
+        r = P.POST_OD / 2
+        clash = (not (x + r <= ucx0 or x - r >= ucx1)) and \
+                (not (z + r <= P.UC_MOUTH_Z or z - r >= P.UC_REAR_Z))
+        must(f"cover post ({x:+.1f},{z:.0f}) clear of the USB-C breakout", not clash,
+             f"post x {x-r:+.2f}..{x+r:+.2f} z {z-r:.2f}..{z+r:.2f} vs breakout "
+             f"x {ucx0:+.2f}..{ucx1:+.2f} z {P.UC_MOUTH_Z:.2f}..{P.UC_REAR_Z:.2f}")
+    must("the USB-C breakout clears the cam board",
+         P.UC_FACE_X + P.UC_T <= -P.PCB_W / 2 - 0.5,
+         f"breakout reaches x={P.UC_FACE_X + P.UC_T:.2f}, board starts at "
+         f"x={-P.PCB_W/2:.2f}")
+    must("the USB-C breakout fits the bay's interior",
+         P.UC_H <= P.INTERIOR_LO,
+         f"board is {P.UC_H} mm across the bay's depth, which offers "
+         f"{P.INTERIOR_LO:.2f} mm")
 
     must("camera seat clears the board bosses",
          P.CAM_SEAT_HW + 0.5 <= P.HOLE_DX / 2 - P.BOSS_OD / 2,
@@ -205,7 +232,16 @@ def check_clearances():
 
 
 # ───────────────────────────────────────────────────────────────── added solids
-def build_additions(sil_poly):
+# TWO groups, and the split is the whole point.  The WALLS are added before the bay is
+# carved, because the carve has to cut a clean pocket inside them.  The PILLARS are added
+# AFTER it, because every one of them stands in exactly the volume the carve removes.
+#
+# ⚠ This file added both together and then carved, until 2026-08-19.  Every post and every
+# boss was therefore built correctly, unioned into the mask, and then deleted by the bay
+# it stood in -- all 14 of them, silently, because nothing downstream looked for them.
+# The exported mask had cover screw holes with nothing behind them and a board with
+# nothing to sit on.  Order of operations is geometry, not style.
+def build_walls(sil_poly):
     w = P.BAY_WALL
     # One tube segment per zone, each overlapping its neighbours in z so the steps
     # between them close into a single solid rather than four stacked boxes.
@@ -215,7 +251,11 @@ def build_additions(sil_poly):
                     P.BAY_CORNER_R + w, fl, BACK)
         for i, (hw, z0, z1, fl, _) in enumerate(P.ZONES)
     ])
+    return _clip(tube, sil_poly)
 
+
+def build_pillars(sil_poly):
+    """Cover posts, their ribs, and the board's bosses -- added INTO the carved bay."""
     posts, ribs = [], []
     for x, z, od in ([(x, z, P.POST_OD) for x, z in P.POST_XY]
                      + [(x, z, P.POST_OD_BATT) for x, z in P.POST_XY_BATT]):
@@ -236,9 +276,52 @@ def build_additions(sil_poly):
             bosses.append(cyl_y(bx, bz, P.BOSS_OD, root_y(bx, bz, P.BOSS_OD / 2),
                                 P.BOARD_SEAT_Y, P.SEG))
 
-    add = union([tube] + posts + ribs + bosses)
+    # The USB-C breakout's mounting pad: a local thickening of the bay's -x wall, from
+    # the wall's inner face inboard to UC_FACE_X, tall enough to carry both pilots.  It
+    # starts a millimetre BELOW the bay's lower wall so it merges into it rather than
+    # meeting it on a coplanar face, and it stops at z = UC_REAR_Z, which is where the
+    # board's rear edge is -- there is no reason to carry it further up the bay.
+    pad = rrect_prism(-P.BAY_HW_UP - 0.5, P.UC_FACE_X,
+                      P.BAY_Z0_UP - 1.0, P.UC_REAR_Z, 1.0,
+                      P.FLOOR_Y_UP - 0.5, -P.COVER_T)
+
+    return _clip(union(posts + ribs + bosses + [pad]), sil_poly)
+
+
+def _clip(solid, sil_poly):
     clip = extrude_y(sil_poly, min(f for _, _, _, f, _ in P.ZONES) - 5.0, BACK + 1.0)
-    return intersection([add, clip])
+    return intersection([solid, clip])
+
+
+def build_pilots():
+    """Drilled LAST, into the pillars, because until they exist there is nothing to drill."""
+    holes = [cyl_y(x, z, P.POST_PILOT, -P.COVER_T - P.COVER_SCREW_LEN,
+                   -P.COVER_T + EPS, 48)
+             for x, z in list(P.POST_XY) + list(P.POST_XY_BATT)]
+    holes += [cyl_y(P.BOARD_CX + sx * P.HOLE_DX / 2, P.BOARD_CZ + sz * P.HOLE_DY / 2,
+                    P.BOSS_PILOT, P.BOARD_SEAT_Y - P.BOARD_SCREW_LEN,
+                    P.BOARD_SEAT_Y + EPS, 48)
+              for sx in (-1, 1) for sz in (-1, 1)]
+    # the breakout's two, which are the only holes in this mask that run along X.
+    # They start 2 mm INBOARD of the pad's face, not EPS beyond it: the bay's own R6
+    # plan corner leaves material as far in as x = -22.81 at this z, and a cutter that
+    # begins exactly at the pad face left a 0.19 mm skin over both mouths.
+    holes += [cyl_x(P.UC_MID_Y + s * P.UC_HOLE_CC / 2, P.UC_PILOT_Z, P.UC_PILOT,
+                    P.UC_FACE_X - P.UC_PILOT_DEPTH, P.UC_FACE_X + 2.0, 48)
+              for s in (-1, 1)]
+
+    # The eye pupils are drilled HERE, after the pillars, and that is deliberate.  Cut
+    # with the rest of the pockets they were merely the first thing the bosses grew back
+    # over: the boss at (-12,68) sits 8.01 mm off the pupil axis and needs 9.30 to clear,
+    # so it reached 1.29 mm into a Ø12.6 bore and closed it to 11.0.  Drilled last, the
+    # bore takes that sliver off the boss's flank instead -- 16 mm down a 21.8 mm column,
+    # nowhere near the seating face or its pilot, which start 5.9 mm above the bore's
+    # deepest point.
+    if P.EYE_PUPILS:
+        holes += [cyl_y(s * P.EYE_X, P.EYE_Z, P.EYE_PUPIL_D,
+                        -(P.EYE_STANDOFF + 2.0), P.FLOOR_Y_UP + EPS, P.SEG)
+                  for s in (-1, 1)]
+    return holes
 
 
 # ───────────────────────────────────────────────────────────────── cutters
@@ -280,22 +363,30 @@ def build_cuts():
         cuts.append(cyl_y(P.LENS_X, pz, P.CAM_MOUNT_PILOT,
                           P.CAM_SEAT_Y - P.CAM_MOUNT_DEPTH, P.CAM_SEAT_Y + EPS, 48))
 
-    # the eye pupils -- cosmetic, blanked by printed plugs
-    if P.EYE_PUPILS:
-        for s in (-1, 1):
-            cuts.append(cyl_y(s * P.EYE_X, P.EYE_Z, P.EYE_PUPIL_D,
-                              -(P.EYE_STANDOFF + 2.0), P.FLOOR_Y_UP + EPS, P.SEG))
+    # The breakout's own envelope, cut clear.  The bay's plan corners are R6, so at
+    # z = 30.7 the pocket only reaches x = -22.81 and the board's mounting face wants
+    # -23.00; at z = 30.0 the corner is 3 mm proud of it.  Cutting the board's box makes
+    # the fit independent of that fillet, and takes the notch out of the bay's lower wall
+    # that lets the receptacle's mouth nest into it.
+    # 0.05 outboard of the pad's face, not flush with it: the pad is added back after
+    # this cut, so it -- not the cutter -- ends up defining the mounting face, and the two
+    # never share a plane.  Flush, they did, and a ray cast exactly down x = UC_FACE_X
+    # came back with SEVEN crossings instead of six.  verify.py pairs crossings rear-first
+    # to measure relief, so the odd one out made it report 0.00 mm of relief in front of a
+    # bay that has 19.
+    cuts.append(rrect_prism(P.UC_FACE_X - 0.05, P.UC_FACE_X + P.UC_T,
+                            P.UC_MOUTH_Z, P.UC_REAR_Z, 1.0,
+                            P.FLOOR_Y_UP, -P.COVER_T))
 
-    # pilots
-    for x, z in list(P.POST_XY) + list(P.POST_XY_BATT):
-        cuts.append(cyl_y(x, z, P.POST_PILOT, -P.COVER_T - P.COVER_SCREW_LEN,
-                          -P.COVER_T + EPS, 48))
-    for sx in (-1, 1):
-        for sz in (-1, 1):
-            cuts.append(cyl_y(P.BOARD_CX + sx * P.HOLE_DX / 2,
-                              P.BOARD_CZ + sz * P.HOLE_DY / 2,
-                              P.BOSS_PILOT, P.BOARD_SEAT_Y - P.BOARD_SCREW_LEN,
-                              P.BOARD_SEAT_Y + EPS, 48))
+    # USB-C port: the plug arrives from BELOW, so this opens a channel up the back of the
+    # chin to the receptacle's mouth.  Its cross-section is the receptacle's own -- 4.4 mm
+    # of thickness across x, 10.0 mm of mouth across y -- and it stops at the bay's lower
+    # wall, where the mouth sits.  MEASURED: it leaves 12.11 mm of relief at its thinnest,
+    # against the 3.00 FRONT_WALL asks for.  This is the back of the chin; the face never
+    # knows.
+    cuts.append(rrect_prism(P.UC_REC_X - P.UC_PORT_H / 2, P.UC_REC_X + P.UC_PORT_H / 2,
+                            P.UC_PORT_Z0, P.BAY_Z0_UP + EPS, 1.0,
+                            P.UC_MID_Y - P.UC_PORT_W / 2, P.UC_MID_Y + P.UC_PORT_W / 2))
 
     # Cable exit: a slot through the BOARD zone's lower wall, so the USB-C lead reaches
     # the power module in the waist by running up inside the bay, and leaves through the
@@ -319,9 +410,11 @@ def main():
     sil = silhouette_polygon(grid["outline"], grid["xs"], grid["zs"], shrink=0.8)
     print(f"  silhouette clip: {sil.area:.0f} mm^2, {len(sil.exterior.coords)} pts")
 
-    add = report("additions", build_additions(sil))
-    m = report("mask + additions", union([mask, add]))
+    walls = report("bay walls", build_walls(sil))
+    m = report("mask + walls", union([mask, walls]))
     m = report("after cuts", difference(m, build_cuts()))
+    m = report("posts and bosses", union([m, build_pillars(sil)]))
+    m = report("after pilots", difference(m, build_pilots()))
 
     # Everything added ran BACK past the wall plane so no cutter would ever end up
     # coplanar with a face it was trimming.  Shave the overshoot off flush: the mask's
