@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Regenerable by build_all.py --force from Sri_Lankan_Mask_2.3mf, and far too big to
+# version: the mask alone is 50 MB of ASCII triangles.  The donor 3MF and mask_cam.3mf
+# ARE tracked -- the donor because nothing rebuilds without it, and mask_cam.3mf because
+# it is the geometry that was physically printed, in a form 3x smaller than the STL.
+mask_raw.stl
+mask_cam.stl
+mask_cam_asprinted.stl
+
+# Sampled surface grids -- rebuilt by the analyze_*.py stages
+*.npz
+
+# Sri_Lankan_Mask_2.3mf, unzipped -- 89 MB of XML that `unzip Sri_Lankan_Mask_2.3mf -d
+# extracted` reproduces exactly.  The archive is tracked; its expansion is not.
+extracted/
