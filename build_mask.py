@@ -19,7 +19,7 @@ import numpy as np
 import trimesh
 
 import mask_params as P
-from geom import (rrect_prism, extrude_y, cyl_x, cyl_y, union, difference,
+from geom import (rrect_prism, extrude_y, cyl_y, union, difference,
                   intersection, silhouette_polygon, report)
 from mask_frame import load_mask
 from measure import standoff_min_rect, standoff_min_disc, rear_depth_max, root_y
@@ -91,32 +91,38 @@ def check_clearances():
              f"a pilot outside the open seat, or inside the pocket, is one you cannot "
              f"put a screwdriver on")
 
-    # ⚠ The two collisions the deleted posts were hiding.  Both are cheap to state and
-    # neither was stated before, which is why both survived into a printed mask.
+    # ⚠ The collisions the deleted posts were hiding.  Neither was stated before, which
+    # is why both survived into a printed mask.
     for x, z in P.POST_XY:
         for sx in (-1, 1):
             d = ((x - sx * P.EYE_X) ** 2 + (z - P.EYE_Z) ** 2) ** 0.5
             need = P.EYE_PUPIL_D / 2 + P.POST_OD / 2
-            must(f"cover post ({x:+.1f},{z:.0f}) clear of the {'right' if sx > 0 else 'left'} pupil",
-                 d >= need,
-                 f"centres {d:.2f} mm apart, need {need:.2f} -- a post inside a pupil bore "
-                 f"caps it, and the bore is what makes the eye read black")
-    ucx0, ucx1 = P.UC_FACE_X, P.UC_FACE_X + P.UC_T
+            must(f"cover post ({x:+.1f},{z:.0f}) clear of the "
+                 f"{'right' if sx > 0 else 'left'} pupil", d >= need,
+                 f"centres {d:.2f} mm apart, need {need:.2f} -- a post inside a pupil "
+                 f"bore caps it, and the bore is what makes the eye read black")
+    cx0 = P.PWR_FACE_X
+    cx1 = P.PWR_FACE_X + P.PWR_SLOT_T + P.PWR_LIP
     for x, z in P.POST_XY:
         r = P.POST_OD / 2
-        clash = (not (x + r <= ucx0 or x - r >= ucx1)) and \
-                (not (z + r <= P.UC_MOUTH_Z or z - r >= P.UC_REAR_Z))
-        must(f"cover post ({x:+.1f},{z:.0f}) clear of the USB-C breakout", not clash,
-             f"post x {x-r:+.2f}..{x+r:+.2f} z {z-r:.2f}..{z+r:.2f} vs breakout "
-             f"x {ucx0:+.2f}..{ucx1:+.2f} z {P.UC_MOUTH_Z:.2f}..{P.UC_REAR_Z:.2f}")
-    must("the USB-C breakout clears the cam board",
-         P.UC_FACE_X + P.UC_T <= -P.PCB_W / 2 - 0.5,
-         f"breakout reaches x={P.UC_FACE_X + P.UC_T:.2f}, board starts at "
-         f"x={-P.PCB_W/2:.2f}")
-    must("the USB-C breakout fits the bay's interior",
-         P.UC_H <= P.INTERIOR_LO,
-         f"board is {P.UC_H} mm across the bay's depth, which offers "
-         f"{P.INTERIOR_LO:.2f} mm")
+        clash = (not (x + r <= cx0 or x - r >= cx1)) and \
+                (not (z + r <= P.PWR_SHELF_Z or z - r >= P.PWR_SLOT_Z1))
+        must(f"cover post ({x:+.1f},{z:.0f}) clear of the DWEII cradle", not clash,
+             f"post x {x-r:+.2f}..{x+r:+.2f} z {z-r:.2f}..{z+r:.2f} vs cradle "
+             f"x {cx0:+.2f}..{cx1:+.2f} z {P.PWR_SHELF_Z:.2f}..{P.PWR_SLOT_Z1:.2f}")
+    must("the DWEII cradle clears the cam board", cx1 <= -P.PCB_W / 2 - 1.0,
+         f"cradle reaches x={cx1:.2f}, board starts at x={-P.PCB_W/2:.2f}")
+    must("the DWEII module fits the bay's depth", P.PWR_H + 0.8 <= P.INTERIOR_UP,
+         f"module is {P.PWR_H} mm across the bay's depth, which offers "
+         f"{P.INTERIOR_UP:.2f} mm")
+    must("the module's slot is open at the top to load it",
+         P.PWR_SLOT_Z1 >= P.PWR_SHELF_Z + P.PWR_W,
+         f"shelf z={P.PWR_SHELF_Z:.1f} + {P.PWR_W} mm of board needs the slot to reach "
+         f"z={P.PWR_SHELF_Z + P.PWR_W:.1f}; it reaches {P.PWR_SLOT_Z1:.1f}")
+    must("the plug's channel is wider than the socket can wander",
+         P.PWR_PORT_W >= 9.0 + 4.0,
+         f"{P.PWR_PORT_W} mm of channel for a ~9 mm socket -- "
+         f"+/-{(P.PWR_PORT_W - 9.0)/2:.1f} mm of tolerance on where it sits")
 
     must("camera seat clears the board bosses",
          P.CAM_SEAT_HW + 0.5 <= P.HOLE_DX / 2 - P.BOSS_OD / 2,
@@ -154,13 +160,10 @@ def check_clearances():
          f"M3×{P.BOARD_SCREW_LEN:.0f} through {P.PCB_T} mm of PCB leaves "
          f"{P.BOARD_SCREW_LEN - P.PCB_T:.2f} mm in a {P.BOSS_H:.2f} mm boss")
 
-    must("power module fits the waist behind the camera",
-         P.PWR_W + 2 * P.PWR_CLR <= 2 * P.BAY_HW_MID
-         and P.PWR_H + 2 * P.PWR_CLR <= P.BAY_Z1_MID - P.BAY_Z0_MID
-         and P.PWR_T <= -P.COVER_T - P.CAM_SEAT_Y,
-         f"{P.PWR_W} x {P.PWR_H} x {P.PWR_T} in a waist "
-         f"{2*P.BAY_HW_MID:.0f} x {P.BAY_Z1_MID-P.BAY_Z0_MID:.0f} with "
-         f"{-P.COVER_T - P.CAM_SEAT_Y:.1f} mm behind the camera clamp")
+    must("the DWEII module clears the camera clamp",
+         P.PWR_SLOT_Z1 < P.CAM_SEAT_Z0,
+         f"module tops out at z={P.PWR_SLOT_Z1:.1f}, the clamp seat starts at "
+         f"z={P.CAM_SEAT_Z0:.1f}")
 
     rear = P.BOARD_BACK_Y + P.REAR_PROTRUSION
     must("board rear parts -> cover", rear <= -P.COVER_T - 0.5,
@@ -276,14 +279,13 @@ def build_pillars(sil_poly):
             bosses.append(cyl_y(bx, bz, P.BOSS_OD, root_y(bx, bz, P.BOSS_OD / 2),
                                 P.BOARD_SEAT_Y, P.SEG))
 
-    # The USB-C breakout's mounting pad: a local thickening of the bay's -x wall, from
-    # the wall's inner face inboard to UC_FACE_X, tall enough to carry both pilots.  It
-    # starts a millimetre BELOW the bay's lower wall so it merges into it rather than
-    # meeting it on a coplanar face, and it stops at z = UC_REAR_Z, which is where the
-    # board's rear edge is -- there is no reason to carry it further up the bay.
-    pad = rrect_prism(-P.BAY_HW_UP - 0.5, P.UC_FACE_X,
-                      P.BAY_Z0_UP - 1.0, P.UC_REAR_Z, 1.0,
-                      P.FLOOR_Y_UP - 0.5, -P.COVER_T)
+    # The DWEII module's cradle: a boss standing off the bay's -x wall, which the slot
+    # is then cut out of.  Added here, with the pillars, because it stands in the volume
+    # the bay carve removes -- and cut afterwards, in build_pilots(), for the same reason
+    # in reverse.
+    pad = rrect_prism(-P.BAY_HW_UP - 0.5, P.PWR_FACE_X + P.PWR_SLOT_T + P.PWR_LIP,
+                      P.PWR_SHELF_Z - 1.5, P.PWR_SLOT_Z1, 1.0,
+                      P.PWR_SLOT_Y0 - 1.5, -P.COVER_T)
 
     return _clip(union(posts + ribs + bosses + [pad]), sil_poly)
 
@@ -302,13 +304,18 @@ def build_pilots():
                     P.BOSS_PILOT, P.BOARD_SEAT_Y - P.BOARD_SCREW_LEN,
                     P.BOARD_SEAT_Y + EPS, 48)
               for sx in (-1, 1) for sz in (-1, 1)]
-    # the breakout's two, which are the only holes in this mask that run along X.
-    # They start 2 mm INBOARD of the pad's face, not EPS beyond it: the bay's own R6
-    # plan corner leaves material as far in as x = -22.81 at this z, and a cutter that
-    # begins exactly at the pad face left a 0.19 mm skin over both mouths.
-    holes += [cyl_x(P.UC_MID_Y + s * P.UC_HOLE_CC / 2, P.UC_PILOT_Z, P.UC_PILOT,
-                    P.UC_FACE_X - P.UC_PILOT_DEPTH, P.UC_FACE_X + 2.0, 48)
-              for s in (-1, 1)]
+    # The module's slot, cut out of the cradle: open at the TOP so the board slides down
+    # into it socket-first, and open at the COVER end in y so the cover traps it once
+    # fitted.  It stops on the shelf at PWR_SHELF_Z -- the two ledges either side of the
+    # plug's channel, which is narrower than the board.
+    holes.append(rrect_prism(P.PWR_FACE_X - 0.4, P.PWR_FACE_X + P.PWR_SLOT_T,
+                             P.PWR_SHELF_Z, P.PWR_SLOT_Z1 + 0.5, 0.5,
+                             P.PWR_SLOT_Y0, P.PWR_SLOT_Y1 + 1.0))
+    # and the plug's channel below that shelf, out through the back of the chin
+    holes.append(rrect_prism(P.PWR_PORT_X0, P.PWR_PORT_X0 + P.PWR_PORT_T,
+                             P.PWR_PORT_Z0, P.PWR_SHELF_Z + 0.5, 1.0,
+                             P.PWR_PORT_CY - P.PWR_PORT_W / 2,
+                             P.PWR_PORT_CY + P.PWR_PORT_W / 2))
 
     # The eye pupils are drilled HERE, after the pillars, and that is deliberate.  Cut
     # with the rest of the pockets they were merely the first thing the bosses grew back
@@ -362,31 +369,6 @@ def build_cuts():
     for pz in P.CAM_MOUNT_Z:
         cuts.append(cyl_y(P.LENS_X, pz, P.CAM_MOUNT_PILOT,
                           P.CAM_SEAT_Y - P.CAM_MOUNT_DEPTH, P.CAM_SEAT_Y + EPS, 48))
-
-    # The breakout's own envelope, cut clear.  The bay's plan corners are R6, so at
-    # z = 30.7 the pocket only reaches x = -22.81 and the board's mounting face wants
-    # -23.00; at z = 30.0 the corner is 3 mm proud of it.  Cutting the board's box makes
-    # the fit independent of that fillet, and takes the notch out of the bay's lower wall
-    # that lets the receptacle's mouth nest into it.
-    # 0.05 outboard of the pad's face, not flush with it: the pad is added back after
-    # this cut, so it -- not the cutter -- ends up defining the mounting face, and the two
-    # never share a plane.  Flush, they did, and a ray cast exactly down x = UC_FACE_X
-    # came back with SEVEN crossings instead of six.  verify.py pairs crossings rear-first
-    # to measure relief, so the odd one out made it report 0.00 mm of relief in front of a
-    # bay that has 19.
-    cuts.append(rrect_prism(P.UC_FACE_X - 0.05, P.UC_FACE_X + P.UC_T,
-                            P.UC_MOUTH_Z, P.UC_REAR_Z, 1.0,
-                            P.FLOOR_Y_UP, -P.COVER_T))
-
-    # USB-C port: the plug arrives from BELOW, so this opens a channel up the back of the
-    # chin to the receptacle's mouth.  Its cross-section is the receptacle's own -- 4.4 mm
-    # of thickness across x, 10.0 mm of mouth across y -- and it stops at the bay's lower
-    # wall, where the mouth sits.  MEASURED: it leaves 12.11 mm of relief at its thinnest,
-    # against the 3.00 FRONT_WALL asks for.  This is the back of the chin; the face never
-    # knows.
-    cuts.append(rrect_prism(P.UC_REC_X - P.UC_PORT_H / 2, P.UC_REC_X + P.UC_PORT_H / 2,
-                            P.UC_PORT_Z0, P.BAY_Z0_UP + EPS, 1.0,
-                            P.UC_MID_Y - P.UC_PORT_W / 2, P.UC_MID_Y + P.UC_PORT_W / 2))
 
     # Cable exit: a slot through the BOARD zone's lower wall, so the USB-C lead reaches
     # the power module in the waist by running up inside the bay, and leaves through the

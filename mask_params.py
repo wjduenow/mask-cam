@@ -227,9 +227,13 @@ CELL_CZ = (BAY_Z0_BATT + BAY_Z1_BATT) / 2   # = 127
 # carried with margin.  There is no USB-A socket -- the output is solder pads marked
 # `5V`, which is why it is thin.  ⚠ Caliper the thickness if you want the number exact;
 # the waist has 35 mm of interior so it cannot plausibly bind.
+# SOURCE: amazon.com/dp/B09YD5C9QC (DWEII, 10-pack).  The drawing above is that
+# listing's image 61U6muDgZEL, saved here as dweii_spec.jpg.  The Type-C socket sits on
+# a 20 mm edge; the 13 mm notch is on a 25 mm edge, and nothing is mounted through it --
+# the board has NO mounting holes, which is why it is cradled rather than screwed.
 PWR_W, PWR_H, PWR_T = 25.0, 20.0, 5.5
 PWR_CLR = 1.0
-PWR_CZ = 78.0             # shares the waist with the camera, behind its clamp
+PWR_NOTCH = 13.0          # the notched section, on one 25 mm edge
 CELL_POCKET_W = CELL_W + 2 * CELL_CLR
 CELL_POCKET_H = CELL_H + 2 * CELL_CLR
 
@@ -369,58 +373,59 @@ COVER_CSK_ANG = 90.0
 #
 # What is left: z 44.25..59.65 is the only window on the -x side that clears both the
 # breakout below and the pupil above.  check_clearances() now asserts all three.
-POST_XY = [(21.0, 36.0), (-21.0, 56.0), (21.0, 56.0),
+POST_XY = [(21.0, 36.0), (-21.0, 59.0), (21.0, 59.0),
            (-20.0, 79.5), (20.0, 79.5)]
 POST_XY_BATT = [(-31.5, 112.0), (31.5, 112.0), (-31.5, 142.0), (31.5, 142.0)]
 POST_OD_BATT = 5.0
 
-# ═════════════════════════════════════════════ USB-C breakout  (MEASURED, jukebox-7)
-# SparkFun-pattern "USB C Breakout" v10 -- the SAME part characterised in
-# ../sonos-nest/hardware/jukebox-7/wall/case_params.py.  Red PCB, 6 pads
-# VBUS·GND·CC1·D−·D+·CC2, with the two 0603 `512` (5.1 kΩ) CC pull-downs that make a
-# USB-C supply actually deliver 5 V.  Do not substitute a board without them.
-UC_H  = 21.4      # MEASURED  the "tall" axis
-UC_D  = 14.5      # MEASURED  receptacle front face -> rear board edge
-UC_T  = 4.75      # MEASURED  overall thickness (PCB 1.6 + receptacle 3.15)
-UC_HOLE_CC  = 16.85   # ⚠ VERIFY (jukebox: photo-scaled, = 13.3 inside-edge + Ø3.5)
-UC_HOLE_OFF = 4.2     # ⚠ VERIFY  hole centres back from the receptacle face
-UC_REC_OFF  = 3.2     # ⚠ VERIFY  receptacle centreline from the board's bare face
-UC_PILOT    = 2.6     # M3 self-tapper, same as every other fastener here
-
-# It stands ON EDGE against the bay's -x wall, receptacle pointing DOWN (-z) at the cable
-# exit, and the receptacle MOUTH nests into the bay's lower wall exactly as the jukebox
-# nests it into that case's rear wall -- so the port does not compete with the wall
-# thickness.  Lying flat instead would need 21.4 mm across a 26 mm bay with both cover
-# posts through the middle of it.
-UC_MOUTH_Z = BAY_Z0_LO - BAY_WALL             # the wall's outer face
-UC_REAR_Z  = UC_MOUTH_Z + UC_D                # = 41.0, the board's rear edge
-# ⚠ The mounting face is NOT the bay wall -- it is a pad standing proud of it, so the
-# port sits over solid muzzle rather than straddling the bay's side wall.
-# UC_PAD_T is 4.0 rather than 3.0, and the pilots 5.0 rather than 6.0, because MEASURED on the mesh
-# the slab outboard of this face is only 4.87 mm at the pilots' z -- the mask's own
-# silhouette runs out before the nominal wall does, so a 6 mm pilot came out of the side
-# of the cheek.  A thicker pad buys the thread back without pushing the board into the
-# cam board: it still clears it by 2.05 mm.
-UC_PAD_T   = 4.0      # local thickening of that wall so the pilots get real material
-UC_FACE_X  = -BAY_HW_LO + UC_PAD_T            # the mounting face (clear of the posts)
-UC_PORT_W, UC_PORT_H = 10.0, 4.4              # receptacle opening + clearance
-UC_PILOT_DEPTH = 5.0                          # into the pad, NOT out the other side
-UC_PILOT_Z = UC_MOUTH_Z + UC_HOLE_OFF         # = 30.7, both pilots share this z
-UC_REC_X   = UC_FACE_X + UC_REC_OFF           # = -19.8, the receptacle's centreline
-# The plug arrives from BELOW, so the chin's rear shell has to be scooped back over the
-# port's width until it clears the receptacle's own envelope.  MEASURED on the mesh: the
-# shell's rear face runs y = -13.4..-15.5 at z 26 and falls away to -17 by z 18, so the
-# scoop is ~2.2 mm deep at its worst and stops mattering below z 18.  verify.py §4c
-# re-measures what survives and gets 17.53 mm at the thinnest point, against the 3.00
-# FRONT_WALL requires -- this is the back of the chin, nowhere near the face.
-# ⚠ UC_PORT_W is across the mouth's WIDTH (the y axis here) and UC_PORT_H across its
-# THICKNESS (x).  Read the other way round -- as a plan width and height -- the channel
-# comes out 90° wrong, and the relief figure it produces is for the wrong slice of chin.
-UC_PORT_Z0 = 14.0     # how far down the chin the plug's channel is opened
-# The board stands on edge, its 21.4 mm axis spanning the bay's DEPTH, so the receptacle
-# -- centred on that axis -- lands mid-depth, not at the floor.  Everything that has to
-# line up with it (the port, both pilots) is measured from here.
-UC_MID_Y = FLOOR_Y_LO + INTERIOR_LO / 2
+# ═════════════════════════════════════════════ DWEII module mount
+# ⚠ THERE IS NO USB-C BREAKOUT IN THIS BUILD, and a whole mount was cut for one before
+# anybody checked.  This file used to carry a UC_* block for a SparkFun-pattern "USB C
+# Breakout" v10 -- 21.4 x 14.5 x 4.75, two M3 holes 16.85 apart -- carried over from
+# ../sonos-nest/hardware/jukebox-7.  README §7 had already replaced that part with the
+# DWEII module (one board does breakout AND charger), and the part actually in hand is
+# the DWEII: amazon.com/dp/B09YD5C9QC, whose own dimension drawing is dweii_spec.jpg in
+# this directory.  The breakout's numbers are gone; everything here derives from PWR_*.
+#
+# WHERE IT SITS.  Low in the BOARD zone, on edge against the -x wall, its Type-C mouth
+# pointing DOWN at a channel through the back of the chin -- not in the waist at
+# PWR_CZ = 78, which has no route to the outside for a plug.  Standing it here also
+# leaves the waist free for the camera's ribbon to fold in.
+#
+# ⚠ TWO NUMBERS ARE STILL SOFT, and the slot is sized so neither can bite:
+#   * PWR_T (5.5) is not dimensioned on the drawing -- the slot is cut 6.3 deep, so
+#     anything up to 6.3 mm thick drops in;
+#   * the Type-C socket's position along the module's 20 mm edge is eyeballed off the
+#     drawing at roughly centred -- the port slot is 14 mm wide for a ~9 mm socket, so
+#     it can sit up to 2.5 mm either side of centre and still line up.
+# No pad and no pilots: the module has no mounting holes, so the bay's own -x wall IS
+# the slot's back face.  That buys 3.0 mm of x back, which is what lets the retaining
+# lips exist at all without crowding the cam board.
+PWR_FACE_X  = -BAY_HW_UP                      # = -26.0, the slot's back face
+PWR_SLOT_T  = PWR_T + 0.8                     # =   6.3, slot depth across x
+PWR_SLOT_H  = PWR_H + 0.8                     # =  20.8, slot width across y
+PWR_LIP     = 1.2         # how far the slot's lips overhang, to hold the board in
+# The module's 20 mm axis spans the bay's DEPTH, its rear edge against the cover, so the
+# cover traps it once fitted.  Its 25 mm axis runs up z from the shelf it rests on.
+PWR_SLOT_Y1 = -COVER_T                        # = -2.50, hard against the cover
+PWR_SLOT_Y0 = PWR_SLOT_Y1 - PWR_SLOT_H        # = -23.30
+PWR_SHELF_Z = BAY_Z0_UP - 1.0                 # = 29.0, what the board's lower edge sits on
+PWR_SLOT_Z1 = PWR_SHELF_Z + PWR_W + 0.5       # = 54.5, and it slides in from above
+# The plug's channel, below the shelf: wider than the socket in y so its exact place on
+# the edge does not matter, and deeper in x than the slot because nothing competes with
+# it down here -- the cam board does not start until z = 32.8.
+PWR_PORT_W  = 14.0        # across y
+PWR_PORT_T  = 9.0         # across x, room for a plug's overmould
+PWR_PORT_CY = (PWR_SLOT_Y0 + PWR_SLOT_Y1) / 2 # = -12.90, the socket's assumed centre
+# +0.5 rather than -0.5: at x = -26.0 the chin leaves 2.96 mm of relief at z = 19 and
+# FRONT_WALL wants 3.00, so the channel starts just inboard of the slot's back face.
+# ⚠ That costs the plug's OVERMOULD ~0.9 mm on its outboard side.  A slim USB-C cable
+# fits; a chunky moulded one may not, and the answer is a slimmer cable, not a deeper
+# channel -- the chin is what is left of the mask's jaw here.
+PWR_PORT_X0 = PWR_FACE_X + 0.5                # = -25.5
+PWR_PORT_Z0 = 14.0        # how far down the chin the channel is opened.  MEASURED: this
+                          # leaves 17.5 mm of relief at its thinnest -- back of the chin,
+                          # nowhere near the face.
 
 # ═════════════════════════════════════════════ cover
 COVER_LIP = 2.0           # how far the rebate eats the 3.0 wall, leaving 1.0 outside

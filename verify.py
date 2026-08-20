@@ -13,8 +13,8 @@ Checks:
   4  the bay interior is clear to the depth the board needs
   4b every cover post and board boss is PRESENT in the mesh and drilled -- they were
      built and then carved away for months, and only the mesh could have told us
-  4c the USB-C breakout's pad, pilots and plug channel exist, and the channel does not
-     eat the chin's relief
+  4c the DWEII module's cradle -- slot, retaining lip, shelf -- exists, and the plug's
+     channel reaches its socket without eating the chin's relief
   5  nothing protrudes past the wall plane
 """
 import numpy as np
@@ -232,52 +232,66 @@ for _sx in (-1, 1):
                 P.BOARD_CZ + _sz * P.HOLE_DY / 2, P.BOSS_OD, P.BOARD_SEAT_Y,
                 P.BOSS_PILOT, P.BOARD_SCREW_LEN)
 
-print("\n=== 4c. the USB-C breakout has somewhere to bolt to ===")
-# Never built at all until 2026-08-19: mask_params specified the whole mount and
-# build_mask.py referenced none of it, so the part had a pad, pilots and a port on paper
-# and nothing in plastic.
+print("\n=== 4c. the DWEII module has a cradle, and its plug can reach it ===")
+# The predecessor of this section checked a SparkFun USB-C breakout that is not in this
+# build at all -- mask_params carried its dimensions over from another project and the
+# part in hand was always the DWEII module (amazon.com/dp/B09YD5C9QC).  A mount was cut
+# for the wrong board.  These checks measure the cradle the module actually needs.
 
 
-def _first_along_x(y, z, from_x=0.0, to_x=-40.0):
-    o = np.array([[from_x, y, z]])
-    d = np.array([[-1.0 if to_x < from_x else 1.0, 0.0, 0.0]])
-    loc, _, _ = M.ray.intersects_location(ray_origins=o, ray_directions=d,
-                                          multiple_hits=True)
-    return np.max(loc[:, 0]) if len(loc) else np.nan
+def _span_x(y, z, start_x=0.0):
+    """Crossings along -x from inside the bay, nearest first."""
+    o = np.array([[start_x, y, z]])
+    loc, _, _ = M.ray.intersects_location(
+        ray_origins=o, ray_directions=np.array([[-1.0, 0.0, 0.0]]), multiple_hits=True)
+    return np.sort(loc[:, 0].ravel())[::-1] if len(loc) else np.array([])
 
 
-_face = _first_along_x(P.UC_MID_Y, (P.BAY_Z0_UP + P.UC_REAR_Z) / 2)
-check("the mounting pad is at UC_FACE_X", abs(_face - P.UC_FACE_X) < 0.05,
-      f"first material inboard of the -x wall at x={_face:.2f}, want {P.UC_FACE_X:.2f}")
+_mid_z = (P.PWR_SHELF_Z + P.PWR_SLOT_Z1) / 2
+_xs = _span_x(P.PWR_PORT_CY, _mid_z)
+# Along -x from inside the bay the ray should cross the retaining lid (two faces), then
+# find the slot open behind it, then the wall.  The slot is a socket, not an open tray:
+# the board slides in from the top, which is why the lid runs the full width.
+_gap = (_xs[1] - _xs[2]) if len(_xs) >= 3 else 0.0
+check("the module's slot is open to its full depth", _gap >= P.PWR_SLOT_T,
+      f"{_gap:.2f} mm of clear slot behind the lid (x {_xs[1]:.2f}..{_xs[2]:.2f}), "
+      f"module is {P.PWR_T} mm thick" if len(_xs) >= 3
+      else f"crossings {np.round(_xs, 2).tolist()}")
 
-for _s in (-1, 1):
-    _y = P.UC_MID_Y + _s * P.UC_HOLE_CC / 2
-    _end = _first_along_x(_y, P.UC_PILOT_Z)
-    check(f"breakout pilot at y={_y:+.2f} is bored",
-          abs(_end - (P.UC_FACE_X - P.UC_PILOT_DEPTH)) < 0.15,
-          f"blind end at x={_end:.2f}, want {P.UC_FACE_X - P.UC_PILOT_DEPTH:.2f} "
-          f"({P.UC_PILOT_DEPTH:.1f} mm of Ø{P.UC_PILOT} thread)")
+# the retaining lips: at the slot's y edges there must be material where the slot's
+# mouth is, or the board just falls out into the bay
+_lip = _span_x(P.PWR_SLOT_Y0 - 0.6, _mid_z)
+check("the slot has a lid to hold the board in",
+      len(_lip) >= 1 and _lip[0] >= P.PWR_FACE_X + P.PWR_SLOT_T - 0.1,
+      f"material at x={_lip[0]:.2f} beside the slot mouth, "
+      f"slot mouth at {P.PWR_FACE_X + P.PWR_SLOT_T:.2f}" if len(_lip) else "nothing there")
 
-# the plug's channel: over the receptacle's own cross-section, the y band it needs must
-# be empty all the way up to the mouth
-_py0, _py1 = P.UC_MID_Y - P.UC_PORT_W / 2, P.UC_MID_Y + P.UC_PORT_W / 2
-_blocked, _thin = [], 9e9
-for _z in np.arange(P.UC_PORT_Z0 + 1.0, P.BAY_Z0_UP, 0.5):
-    for _x in np.arange(P.UC_REC_X - P.UC_PORT_H / 2 + 0.2,
-                        P.UC_REC_X + P.UC_PORT_H / 2 - 0.1, 0.4):
-        _o = np.array([[_x, 60.0, _z]])
+# the shelf the board's lower edge lands on
+_shelf = _span_x(P.PWR_SLOT_Y0 + 0.8, P.PWR_SHELF_Z - 1.0)
+check("there is a shelf under the board", len(_shelf) >= 1
+      and _shelf[0] >= P.PWR_FACE_X + P.PWR_SLOT_T - 0.1,
+      f"solid at x={_shelf[0]:.2f} just below z={P.PWR_SHELF_Z:.1f}"
+      if len(_shelf) else "nothing under the slot -- the board would slide out")
+
+# the plug's channel, and what it leaves of the chin
+_py0 = P.PWR_PORT_CY - P.PWR_PORT_W / 2
+_py1 = P.PWR_PORT_CY + P.PWR_PORT_W / 2
+_blocked, _thin = 0, 9e9
+for _z in np.arange(P.PWR_PORT_Z0 + 1.0, P.PWR_SHELF_Z - 0.5, 0.5):
+    for _x in np.arange(P.PWR_PORT_X0 + 0.3, P.PWR_PORT_X0 + P.PWR_PORT_T - 0.2, 0.5):
         _loc, _, _ = M.ray.intersects_location(
-            ray_origins=_o, ray_directions=np.array([[0, -1.0, 0]]), multiple_hits=True)
+            ray_origins=np.array([[_x, 60.0, _z]]),
+            ray_directions=np.array([[0, -1.0, 0]]), multiple_hits=True)
         if len(_loc) < 2:
             continue
         _ys = np.sort(_loc[:, 1].ravel())
         if np.any((_ys > _py0 + 0.05) & (_ys < _py1 - 0.05)):
-            _blocked.append((_x, _z))
+            _blocked += 1
         _thin = min(_thin, _py0 - _ys[0])
-check("the plug's channel is clear to the mouth", not _blocked,
-      f"{len(_blocked)} blocked sample(s)" if _blocked
-      else f"open over x ±{P.UC_PORT_H/2:.1f}, y {_py0:.2f}..{_py1:.2f}, "
-           f"z {P.UC_PORT_Z0:.0f}..{P.BAY_Z0_UP:.0f}")
+check("the plug's channel is clear to the socket", _blocked == 0,
+      f"{_blocked} blocked sample(s)" if _blocked else
+      f"open over x {P.PWR_PORT_X0:.1f}..{P.PWR_PORT_X0 + P.PWR_PORT_T:.1f}, "
+      f"y {_py0:.2f}..{_py1:.2f}, z {P.PWR_PORT_Z0:.0f}..{P.PWR_SHELF_Z:.0f}")
 check("the port channel keeps FRONT_WALL relief", _thin >= P.FRONT_WALL,
       f"thinnest {_thin:.2f} mm of chin left in front of it (design min {P.FRONT_WALL})")
 

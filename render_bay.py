@@ -16,7 +16,7 @@ import mask_params as P
 M = trimesh.load("mask_cam.stl", process=True)
 S = 0.3
 xs = np.arange(-38, 38, S)
-zs = np.arange(20, 100, S)
+zs = np.arange(12, 100, S)
 XX, ZZ = np.meshgrid(xs, zs)
 o = np.column_stack([XX.ravel(), np.full(XX.size, 60.0), ZZ.ravel()])
 d = np.tile([0, -1.0, 0], (len(o), 1))
@@ -50,18 +50,22 @@ for sx in (-1, 1):
 for s in (-1, 1):
     ring(s * P.EYE_X, P.EYE_Z, P.EYE_PUPIL_D, color="tab:blue", lw=1.2, ls="--")
 
-ax.add_patch(plt.Rectangle((P.UC_FACE_X, P.UC_MOUTH_Z), P.UC_T, P.UC_D,
+ax.add_patch(plt.Rectangle((P.PWR_FACE_X, P.PWR_SHELF_Z), P.PWR_T, P.PWR_W,
                            fill=False, ec="tab:green", lw=1.6))
+ax.add_patch(plt.Rectangle((P.PWR_PORT_X0, P.PWR_PORT_Z0), P.PWR_PORT_T,
+                           P.PWR_SHELF_Z - P.PWR_PORT_Z0,
+                           fill=False, ec="tab:green", lw=1.0, ls=":"))
 ax.add_patch(plt.Rectangle((-P.PCB_W / 2, P.BOARD_CZ - P.PCB_L / 2), P.PCB_W, P.PCB_L,
                            fill=False, ec="tab:orange", lw=1.0, ls=":"))
 
-ax.annotate("cover posts (9, red)", (21, 36), xytext=(26, 24), fontsize=8,
+ax.annotate("cover posts (9, red)", (21, 36), xytext=(26, 16), fontsize=8,
             color="crimson", arrowprops=dict(arrowstyle="->", color="crimson"))
-ax.annotate("board bosses (4)", (12, 36), xytext=(-4, 22), fontsize=8,
+ax.annotate("board bosses (4)", (12, 36), xytext=(-4, 14), fontsize=8,
             color="tab:orange", arrowprops=dict(arrowstyle="->", color="tab:orange"))
-ax.annotate("USB-C breakout,\non edge against its pad",
-            (P.UC_FACE_X + P.UC_T / 2, P.UC_MOUTH_Z + 6), xytext=(-37, 46), fontsize=8,
-            color="tab:green", arrowprops=dict(arrowstyle="->", color="tab:green"))
+ax.annotate("DWEII module, on edge\nin its slot; plug enters\nfrom below (dotted)",
+            (P.PWR_FACE_X + P.PWR_T / 2, P.PWR_SHELF_Z + 12), xytext=(-37, 62),
+            fontsize=8, color="tab:green",
+            arrowprops=dict(arrowstyle="->", color="tab:green"))
 ax.annotate("eye pupils — posts now\nclear them by 10.4 mm", (-P.EYE_X, P.EYE_Z),
             xytext=(-37, 84), fontsize=8, color="tab:blue",
             arrowprops=dict(arrowstyle="->", color="tab:blue"))

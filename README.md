@@ -12,6 +12,7 @@ hangs on a wall or drops onto a printed stand, using the same two mounting point
 | **Aperture** | **Ø7.6 at (x 0, z 91)** — the brow, on the mirror line. **79–165°** unvignetted |
 | **Battery** | **55 × 55 × 12 mm** cell in a 58 × 58 pocket, 21.2 mm of interior |
 | **Parts** | `mask_cam` · `cover` · `stand` · `camera_clamp` · `battery_shim` · `camera_shims` · `eye_plugs` |
+| **Power** | [DWEII Type-C boost + charge module](https://www.amazon.com/dp/B09YD5C9QC), 25 × 20 mm — cradled in the board bay, plug enters from below |
 | **Nothing protrudes** | past the wall plane except the cover's own hanging pads |
 
 ![preview](render_preview.png)
@@ -186,6 +187,16 @@ defects:
   merged — the mesh came apart into four bodies. Petals are not structural ground.
 - **The USB-C port cut sat at floor depth** instead of on the receptacle's midline, eating
   forward into the muzzle and leaving 1.28 mm of relief.
+- **A mount was cut for a part that is not in this build.** `mask_params.py` carried a
+  `UC_*` block for a SparkFun-pattern USB-C breakout — 21.4 × 14.5 × 4.75, two M3 holes
+  16.85 apart — copied from `../sonos-nest/hardware/jukebox-7`. README §7 had *already*
+  replaced that part with the DWEII module, and the part in hand was always the DWEII
+  ([B09YD5C9QC](https://www.amazon.com/dp/B09YD5C9QC), drawing in `dweii_spec.jpg`). A
+  pad, two pilots and a port channel were cut for a board nobody owns, and the board-zone
+  post layout was re-cut around it. Its numbers could not have worked either: the slab
+  outboard of that pad is **4.87 mm**, not the nominal wall, so its 6 mm pilots came out
+  through the cheek. The whole block is gone; the mount now derives from `PWR_*`, and the
+  module is cradled rather than screwed because it **has no mounting holes**.
 - **Every cover post and every board boss was built, then deleted.** `build_mask.py`
   unioned the pillars into the mask and *then* carved the bay, and the zone cutters span
   each zone's whole footprint from its floor back to the wall plane — so all 14 pillars
@@ -340,17 +351,18 @@ untouched.
 4. **Fold the excess ribbon** into the plenum. The module ships on a **75 mm** FPC against a
    much shorter path, and it cannot be trimmed — the gold fingers are the termination.
    S-fold it; don't crease it.
-4b. **USB-C breakout** (if you are using one) against the pad on the board bay's −x
-   wall, 2 × M3 × 6 into the pilots at z = 30.7. It stands **on edge**, receptacle
-   pointing **down**, and its mouth nests into the bay's lower wall — the plug reaches it
-   up a channel opened through the back of the chin, which leaves 17.5 mm of relief and
-   is invisible from the front. ⚠ `UC_HOLE_CC`, `UC_HOLE_OFF` and `UC_REC_OFF` are still
-   photo-scaled, not callipered: check the hole spacing against your board before you
-   print, and change them in `mask_params.py` if it differs.
-5. **DWEII module** (25 × 20 mm) into the waist behind the clamp, its 25 mm axis across
-   the mask — the 20 mm axis has only 1 mm of clearance in z and the long one will not go.
-   Wire its `5V` output pads to J4 `5V`/`GND`, and its `+`/`−` pads to the cell. Its own
-   Type-C socket takes the incoming cable; there is no USB-A on it.
+5. **DWEII module** slides **down into its slot** on the board bay's −x wall, Type-C
+   socket first. It is a socket, not a tray: back, both sides and a retaining lid, open
+   only at the top, so the board drops in and cannot fall out sideways. It lands on the
+   shelf at z = 29, and once the cover is on, the cover closes the slot's rear end and
+   traps it. **No screws** — the board has no mounting holes.
+
+   The plug reaches its socket up a **channel through the back of the chin**, which
+   leaves 4.6 mm of relief at its thinnest and is invisible from the front. ⚠ Use a
+   **slim** USB-C cable: the channel is 9 mm across and a chunky moulded plug will not
+   go up it.
+
+   Wire its `5V` output pads to J4 `5V`/`GND`, and its `+`/`−` pads to the cell.
 6. **Cell** into the battery zone, then **`battery_shim.stl`** on top of it, ribs facing the
    cell's back and the two tall walls straddling it. It fills the 9.20 mm that would
    otherwise let the cell move, and holds it in x, which is the axis with 4.7 mm of slop.
@@ -371,7 +383,7 @@ untouched.
 | where | qty | screw |
 |---|---|---|
 | cover → posts | 9 | M3 × 8 flat, self-tapping |
-| USB-C breakout → pad | 2 | M3 × 6 self-tapping |
+
 | board → bosses | 4 | M3 × 6 flat, self-tapping |
 | camera clamp | 1 | M2.5 × 6 self-tapping |
 | wall (or the stand's pegs) | 2 | #6 or M4 pan head |
