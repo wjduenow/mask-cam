@@ -311,6 +311,32 @@ USB-C cable ──► DWEII  Type-C socket        (charges the cell)
 
 Nothing depends on the cam board's own power path.
 
+### The module's pads — READ OFF THE SILKSCREEN
+
+```
+        ┌─── K ───┐   K   switch input (开关).  A momentary button to `−`.
+        │  +   −  │   +/− BATTERY pair
+        │         │
+   5V + │         │   5V+ / 5V−  OUTPUT pair, to the cam board
+   5V − │ [USB-C] │
+        └─────────┘   IC: HOTCHIP PB005 3A.  Four LEDs, lower right.
+```
+
+⚠️ **The button gates the output and the gauge together** — they are not separable on this
+IC, and while a charger is plugged in the gauge lights regardless of it. A button gets you
+"camera off, LEDs off" or "camera on, LEDs on". To kill the LEDs alone, desolder the four
+of them; charging, boost and protection are untouched by that.
+
+The bay is not lit by them anyway: the module fits **components toward the wall**, which
+puts the LEDs ~0.5 mm off the solid back of their pocket, and the eye plugs blank the only
+20 mm sightlines out of that bay.
+
+⚠️ **Check whether the boost auto-starts.** Some PB005 builds wake on load current, others
+need a button press — and a module that needs a press has its button sealed inside the
+mask. Cell connected, USB unplugged, put a load on the `5V` pads and see whether 5 V
+appears untouched. If it does not, the `K` button has to come out to somewhere reachable
+and the cover has to carry it.
+
 ### ⚠️ Cell polarity — and why the LEDs will not tell you
 
 The module carries **four LEDs, a 25 %-per-segment fuel gauge**. The top segment pulses
