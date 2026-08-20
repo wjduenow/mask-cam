@@ -331,11 +331,17 @@ The bay is not lit by them anyway: the module fits **components toward the wall*
 puts the LEDs ~0.5 mm off the solid back of their pocket, and the eye plugs blank the only
 20 mm sightlines out of that bay.
 
-⚠️ **Check whether the boost auto-starts.** Some PB005 builds wake on load current, others
-need a button press — and a module that needs a press has its button sealed inside the
-mask. Cell connected, USB unplugged, put a load on the `5V` pads and see whether 5 V
-appears untouched. If it does not, the `K` button has to come out to somewhere reachable
-and the cover has to carry it.
+✅ **The boost auto-starts — TESTED 2026-08-20, no button press needed.** So `K` is left
+unwired, nothing has to be brought out through the cover, and the mask comes back up on
+its own after a power cycle. This was the one open question that could have forced a
+redesign of the cover, and it did not.
+
+⚠️ The corollary: modules that wake on load current also **sleep on the absence of it**,
+typically somewhere around 50–70 mA. Streaming MJPEG the S3 is nowhere near that, so it
+does not bite here — but firmware that ever puts the board into deep sleep could drop
+below the threshold, and the module would then shut off and need a press to come back,
+from inside a sealed mask. Keep the board awake, or bleed enough current to stay above the
+cutoff.
 
 ### ⚠️ Cell polarity — and why the LEDs will not tell you
 
