@@ -393,12 +393,10 @@ UC_PILOT    = 2.6     # M3 self-tapper, same as every other fastener here
 # thickness.  Lying flat instead would need 21.4 mm across a 26 mm bay with both cover
 # posts through the middle of it.
 UC_MOUTH_Z = BAY_Z0_LO - BAY_WALL             # the wall's outer face
-UC_REAR_Z  = UC_MOUTH_Z + UC_D                # = 33.0, board's rear edge (bay top is 36)
-# ⚠ The mounting face is NOT the bay wall.  At x=-13 the receptacle's port straddles the
-# bay's side wall, where the muzzle thins to 18.42 mm proud -- it left 2.75 mm of relief
-# against the 3.00 required, and both check_clearances() and verify.py rejected it.
-# Standing the board 2 mm inboard puts the port over 21.67 mm of material instead.
-# 4.0 rather than 3.0, and the pilots 5.0 rather than 6.0, because MEASURED on the mesh
+UC_REAR_Z  = UC_MOUTH_Z + UC_D                # = 41.0, the board's rear edge
+# ⚠ The mounting face is NOT the bay wall -- it is a pad standing proud of it, so the
+# port sits over solid muzzle rather than straddling the bay's side wall.
+# UC_PAD_T is 4.0 rather than 3.0, and the pilots 5.0 rather than 6.0, because MEASURED on the mesh
 # the slab outboard of this face is only 4.87 mm at the pilots' z -- the mask's own
 # silhouette runs out before the nominal wall does, so a 6 mm pilot came out of the side
 # of the cheek.  A thicker pad buys the thread back without pushing the board into the
@@ -412,9 +410,12 @@ UC_REC_X   = UC_FACE_X + UC_REC_OFF           # = -19.8, the receptacle's centre
 # The plug arrives from BELOW, so the chin's rear shell has to be scooped back over the
 # port's width until it clears the receptacle's own envelope.  MEASURED on the mesh: the
 # shell's rear face runs y = -13.4..-15.5 at z 26 and falls away to -17 by z 18, so the
-# scoop is ~2.2 mm deep at its worst and stops mattering below z 18.  It leaves 9.04 mm
-# of relief at the thinnest point, against the 3.00 FRONT_WALL requires -- this is the
-# back of the chin, nowhere near the face.
+# scoop is ~2.2 mm deep at its worst and stops mattering below z 18.  verify.py §4c
+# re-measures what survives and gets 17.53 mm at the thinnest point, against the 3.00
+# FRONT_WALL requires -- this is the back of the chin, nowhere near the face.
+# ⚠ UC_PORT_W is across the mouth's WIDTH (the y axis here) and UC_PORT_H across its
+# THICKNESS (x).  Read the other way round -- as a plan width and height -- the channel
+# comes out 90° wrong, and the relief figure it produces is for the wrong slice of chin.
 UC_PORT_Z0 = 14.0     # how far down the chin the plug's channel is opened
 # The board stands on edge, its 21.4 mm axis spanning the bay's DEPTH, so the receptacle
 # -- centred on that axis -- lands mid-depth, not at the floor.  Everything that has to
