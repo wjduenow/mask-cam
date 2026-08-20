@@ -411,6 +411,16 @@ def build_cuts():
         cuts.append(cyl_y(P.LENS_X, pz, P.CAM_MOUNT_PILOT,
                           P.CAM_SEAT_Y - P.CAM_MOUNT_DEPTH, P.CAM_SEAT_Y + EPS, 48))
 
+    # ⚠ THE MODULE'S POCKET HAS TO BE CUT FROM THE MASK TOO, not only out of its own
+    # boss.  It starts 1 mm BELOW the bay's floor level in z -- that 1 mm is what forms
+    # the shelf the module rests on -- and the bay carve stops at BAY_Z0_UP, so
+    # differencing the pocket out of the boss alone left a 0.5 mm plate of the bay's lower
+    # wall lying across the pocket's bottom.  A 25 mm board in a 25.5 mm pocket would have
+    # fouled it and not gone in at all.
+    cuts.append(rrect_prism(*sorted((P.PWR_FACE_X, P.PWR_X_SLOT)),
+                            P.PWR_SHELF_Z, P.PWR_SLOT_Z1, 0.5,
+                            P.PWR_SLOT_Y0, P.PWR_SLOT_Y1 + 1.0))
+
     # Cable exit: a slot through the BOARD zone's lower wall, so the USB-C lead reaches
     # the power module in the waist by running up inside the bay, and leaves through the
     # mask's own hollow at the bottom.  No connector is exposed on the outside.

@@ -306,6 +306,22 @@ check("the plug's channel is clear to the socket", _blocked == 0,
 check("the port channel keeps FRONT_WALL relief", _thin >= P.FRONT_WALL,
       f"thinnest {_thin:.2f} mm of chin left in front of it (design min {P.FRONT_WALL})")
 
+# ⚠ THE CHECK THAT WAS MISSING.  The one above samples the channel's own z range and
+# stops below the shelf, so it never looked at the 1 mm where the pocket cuts into the
+# bay's lower wall -- and a 0.5 mm plate of that wall lay right across the pocket's
+# bottom, because the pocket had been differenced out of its boss but never cut from the
+# mask.  Cast straight UP the socket's own line instead: from under the chin it must
+# reach the top of the pocket without meeting anything.
+_sock_x = P.PWR_X_FACE + P.PWR_SIDE * 2.5          # mid-way through the Type-C shell
+_loc, _, _ = M.ray.intersects_location(
+    ray_origins=np.array([[_sock_x, P.PWR_RET_Y, -20.0]]),
+    ray_directions=np.array([[0.0, 0.0, 1.0]]), multiple_hits=True)
+_up = np.sort(_loc[:, 2].ravel()) if len(_loc) else np.array([])
+_reach = _up[0] if len(_up) else 1e9
+check("a plug can actually reach the socket", _reach >= P.PWR_SLOT_Z1 - 0.1,
+      f"clear up x={_sock_x:+.2f} from under the chin to z={_reach:.2f}; the pocket "
+      f"tops out at {P.PWR_SLOT_Z1:.1f}")
+
 print("\n=== 5. the donor's own surface is untouched outside the bay ===")
 # Sample the face well away from anything we cut, and confirm the front surface has not
 # moved by so much as a micron.
