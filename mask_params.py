@@ -62,7 +62,11 @@ PCB_W, PCB_L, PCB_T = 30.4, 38.4, 1.60
 # what the 38 mm overall implies.  ⚠ Both are photo-scaled; one calliper reading across
 # the card's span would retire SD_MARGIN.
 SD_OUT   = 7.6            # how far the card protrudes past the PCB's edge
-SD_SIDE  = -1             # which side of the mask it protrudes toward
+SD_SIDE  = +1             # which side of the mask it protrudes toward
+# ⚠ +1 CORRECTED 2026-08-20 from the assembly photo, having first been read off a verbal
+# description that had the front/back mirror the other way round.  The photo is the
+# authority: the bay opens toward image-left where the camera seat is, so image-left is
+# the mask's +z; rotate it upright and the card is on the far side from the description.
 SD_MARGIN = 1.0           # carried against the photo-scaled z band
 SD_Z0, SD_Z1 = 51.7 - SD_MARGIN, 66.0 + SD_MARGIN
 SD_X     = SD_SIDE * (PCB_W / 2 + SD_OUT)     # = -22.80, the card's outer edge
@@ -391,7 +395,7 @@ COVER_CSK_ANG = 90.0
 # The board zone now has three claimants per wall, not two.  On -x the SD card owns
 # z 50.7..67.0; on +x the cradle owns z 29..54.5.  Once the pupils are cleared too, what
 # is left is z <= 47.5 on the -x wall and a ~2 mm window around z 59 on the +x wall.
-POST_XY = [(-21.0, 36.0), (-21.0, 45.5), (21.0, 59.0),
+POST_XY = [(21.0, 36.0), (21.0, 45.5), (-21.0, 59.0),
            (-20.0, 79.5), (20.0, 79.5)]
 POST_XY_BATT = [(-31.5, 112.0), (31.5, 112.0), (-31.5, 142.0), (31.5, 142.0)]
 POST_OD_BATT = 5.0
@@ -425,17 +429,31 @@ POST_OD_BATT = 5.0
 # move -- it is where the board's own slot puts it -- so the cradle did.
 PWR_SIDE    = -SD_SIDE                        # = +1, the wall the card does NOT use
 PWR_FACE_X  = PWR_SIDE * BAY_HW_UP            # = +26.0, the slot's back face
-PWR_SLOT_T  = PWR_T + 0.8                     # =   6.3, slot depth across x
-PWR_SLOT_H  = PWR_H + 0.8                     # =  20.8, slot width across y
-PWR_LIP     = 1.2         # how far the slot's lips overhang, to hold the board in
-PWR_X_SLOT  = PWR_FACE_X - PWR_SIDE * PWR_SLOT_T      # = +19.70, the slot's inboard face
-PWR_X_LIP   = PWR_X_SLOT - PWR_SIDE * PWR_LIP         # = +18.50, the retaining lid
+PWR_SLOT_T  = PWR_T + 1.0                     # =   6.5, pocket depth across x
+PWR_SLOT_H  = PWR_H + 0.8                     # =  20.8, pocket width across y
+# ⚠ AN OPEN POCKET, NOT A SLIDE-IN SLOT.  It had a lid across its mouth and the cover
+# closed its far end, so the module was CAPTURED rather than fastened -- which meant it
+# could not be screwed down, and the soldered wires had to be dressed while sliding a
+# board into a blind slot.  Now the mouth is open to the bay: the module's lower edge
+# tucks under a fixed lip, it swings in, and power_clamp.stl screws down over its top.
+# The module goes in COMPONENTS TOWARD THE WALL, so the clamp bears on a flat PCB back
+# rather than on the inductor and the Type-C shell.
+PWR_LIP     = 1.0         # how far the fixed bottom lip overhangs the module's face
+PWR_LIP_H   = 3.0         # how tall that lip is, in z
+PWR_X_SLOT  = PWR_FACE_X - PWR_SIDE * PWR_SLOT_T          # the pocket's mouth
+PWR_X_FACE  = PWR_FACE_X - PWR_SIDE * PWR_T               # where the module's back sits
+PWR_X_LIP   = PWR_X_FACE + PWR_SIDE * PWR_LIP             # the lip's inner face
+PWR_RET_Z     = 0.0       # set below, once PWR_SLOT_Z1 exists
+PWR_RET_PILOT = 2.6       # M3 self-tapper, same as every other fastener here
+PWR_RET_DEPTH = 5.0
 # The module's 20 mm axis spans the bay's DEPTH, its rear edge against the cover, so the
 # cover traps it once fitted.  Its 25 mm axis runs up z from the shelf it rests on.
 PWR_SLOT_Y1 = -COVER_T                        # = -2.50, hard against the cover
 PWR_SLOT_Y0 = PWR_SLOT_Y1 - PWR_SLOT_H        # = -23.30
 PWR_SHELF_Z = BAY_Z0_UP - 1.0                 # = 29.0, what the board's lower edge sits on
-PWR_SLOT_Z1 = PWR_SHELF_Z + PWR_W + 0.5       # = 54.5, and it slides in from above
+PWR_SLOT_Z1 = PWR_SHELF_Z + PWR_W + 0.5       # = 54.5, the pocket's top
+PWR_RET_Z   = PWR_SLOT_Z1 + 2.5               # = 57.0, the clamp's screw, above it
+PWR_RET_Y   = (PWR_SLOT_Y0 + PWR_SLOT_Y1) / 2 # = -12.90, on the pocket's centreline
 # The plug's channel, below the shelf: wider than the socket in y so its exact place on
 # the edge does not matter, and deeper in x than the slot because nothing competes with
 # it down here -- the cam board does not start until z = 32.8.

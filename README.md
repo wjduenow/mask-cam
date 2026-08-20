@@ -187,6 +187,12 @@ defects:
   merged — the mesh came apart into four bodies. Petals are not structural ground.
 - **The USB-C port cut sat at floor depth** instead of on the receptacle's midline, eating
   forward into the muzzle and leaving 1.28 mm of relief.
+- **The module was captured, not fastened.** Its pocket had a lid across the mouth and
+  the cover closed the far end, so there was no way to screw it down and the soldered
+  wires had to be dressed while feeding a board into a blind slot. The pocket is open to
+  the bay now, with an **undercut lip** at the bottom — which is why the cradle is built
+  as its own boolean assembly in `build_pillars()` rather than as one cutter: a lip that
+  overhangs the mouth *without* making the pocket shallower cannot be cut in one pass.
 - **The cam board is 38 mm wide, not 30.4.** With a microSD card seated, the slot region
   juts **7.6 mm past one long edge**, and nothing in `mask_params.py` knew — the whole bay
   was laid out around a bare PCB. Measured off the board's own 32 × 24 mm hole pattern in
@@ -279,6 +285,7 @@ bounding box == donor's                    [193.24, 74.35, 187.91]
 | `stand.stl` | 181.6 × 99.7 × 137.4 | ~151 g | optional, for a mantel |
 | `camera_clamp.stl` | 15.6 × 16.6 × 3.2 | ~1 g | **one** M2.5, cut to the seat that is really in the mask — see §6.1 |
 | `battery_shim.stl` | 62 × 56 × 13.2 | ~10 g | fills the 9.20 mm between the cell and the cover, and locates the cell |
+| `power_clamp.stl` | 16.0 × 10.5 × 3.5 | <1 g | one M3 holds the DWEII module in its pocket — fastened, not trapped |
 | `camera_shims.stl` | 3 shims, 0.5 / 1.0 / 2.0 | <1 g | take up the 0.50 mm of slack behind the module |
 | `eye_plugs.stl` | 2 plugs, Ø12.45 | ~2 g | print in black |
 
@@ -359,11 +366,12 @@ untouched.
 4. **Fold the excess ribbon** into the plenum. The module ships on a **75 mm** FPC against a
    much shorter path, and it cannot be trimmed — the gold fingers are the termination.
    S-fold it; don't crease it.
-5. **DWEII module** slides **down into its slot** on the board bay's −x wall, Type-C
-   socket first. It is a socket, not a tray: back, both sides and a retaining lid, open
-   only at the top, so the board drops in and cannot fall out sideways. It lands on the
-   shelf at z = 29, and once the cover is on, the cover closes the slot's rear end and
-   traps it. **No screws** — the board has no mounting holes.
+5. **DWEII module** into its pocket on the board bay's **−x** wall, **components facing
+   the wall** so the clamp bears on a flat PCB back. Tuck its lower edge under the fixed
+   lip, swing the top in, then **`power_clamp.stl`, 1 × M3 × 6** into the pilot at z = 57.
+   The pocket is open to the bay, so the module is fastened before the cover goes near it
+   and the soldered wires can be dressed with everything in view. The board has no
+   mounting holes of its own — the clamp is what replaces them.
 
    The plug reaches its socket up a **channel through the back of the chin**, which
    leaves 4.6 mm of relief at its thinnest and is invisible from the front. ⚠ Use a
@@ -397,6 +405,7 @@ untouched.
 
 | board → bosses | 4 | M3 × 6 flat, self-tapping |
 | camera clamp | 1 | M2.5 × 6 self-tapping |
+| power clamp → its pilot | 1 | M3 × 6 flat, self-tapping |
 | wall (or the stand's pegs) | 2 | #6 or M4 pan head |
 
 All thread-forming into bare printed plastic — no nuts, no heat-set inserts.
@@ -504,8 +513,8 @@ mask-cam/
     build_mask.py          mask_cam.stl  + 55 clearance checks
     build_cover.py         cover.stl                       (CadQuery)
     build_stand.py         stand.stl                       (CadQuery)
-    build_smalls.py        camera_clamp / battery_shim /
-                           shims / plugs                   (CadQuery)
+    build_smalls.py        camera_clamp / power_clamp /
+                           battery_shim / shims / plugs    (CadQuery)
     verify.py              re-measures the FINISHED mask   (16 checks)
     verify_stand.py        pegs vs keyholes, and tipping
     verify_smalls.py       puts the clamp and the shim IN the mask mesh and asks

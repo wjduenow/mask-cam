@@ -19,7 +19,7 @@ import numpy as np
 import trimesh
 
 import mask_params as P
-from geom import (rrect_prism, extrude_y, cyl_y, union, difference,
+from geom import (rrect_prism, extrude_y, cyl_x, cyl_y, union, difference,
                   intersection, silhouette_polygon, report)
 from mask_frame import load_mask
 from measure import standoff_min_rect, standoff_min_disc, rear_depth_max, root_y
@@ -101,7 +101,7 @@ def check_clearances():
                  f"{'right' if sx > 0 else 'left'} pupil", d >= need,
                  f"centres {d:.2f} mm apart, need {need:.2f} -- a post inside a pupil "
                  f"bore caps it, and the bore is what makes the eye read black")
-    cx0, cx1 = sorted((P.PWR_FACE_X, P.PWR_X_LIP))
+    cx0, cx1 = sorted((P.PWR_FACE_X, P.PWR_X_SLOT))
     for x, z in P.POST_XY:
         r = P.POST_OD / 2
         clash = (not (x + r <= cx0 or x - r >= cx1)) and \
@@ -134,10 +134,18 @@ def check_clearances():
     must("the DWEII module fits the bay's depth", P.PWR_H + 0.8 <= P.INTERIOR_UP,
          f"module is {P.PWR_H} mm across the bay's depth, which offers "
          f"{P.INTERIOR_UP:.2f} mm")
-    must("the module's slot is open at the top to load it",
+    must("the module's pocket is long enough for it",
          P.PWR_SLOT_Z1 >= P.PWR_SHELF_Z + P.PWR_W,
-         f"shelf z={P.PWR_SHELF_Z:.1f} + {P.PWR_W} mm of board needs the slot to reach "
+         f"shelf z={P.PWR_SHELF_Z:.1f} + {P.PWR_W} mm of board needs the pocket to reach "
          f"z={P.PWR_SHELF_Z + P.PWR_W:.1f}; it reaches {P.PWR_SLOT_Z1:.1f}")
+    must("the bottom lip actually overhangs the module",
+         P.PWR_LIP >= 0.8 and P.PWR_SLOT_T > P.PWR_T,
+         f"lip stands {P.PWR_LIP:.1f} mm proud of the module's back face at "
+         f"x={P.PWR_X_FACE:+.2f}, in a pocket {P.PWR_SLOT_T:.1f} deep for a "
+         f"{P.PWR_T:.1f} mm board")
+    must("the clamp's screw lands above the pocket, not in it",
+         P.PWR_RET_Z - P.PWR_RET_PILOT / 2 > P.PWR_SLOT_Z1,
+         f"pilot at z={P.PWR_RET_Z:.1f}, pocket tops out at z={P.PWR_SLOT_Z1:.1f}")
     must("the plug's channel is wider than the socket can wander",
          P.PWR_PORT_W >= 9.0 + 4.0,
          f"{P.PWR_PORT_W} mm of channel for a ~9 mm socket -- "
@@ -302,10 +310,24 @@ def build_pillars(sil_poly):
     # is then cut out of.  Added here, with the pillars, because it stands in the volume
     # the bay carve removes -- and cut afterwards, in build_pilots(), for the same reason
     # in reverse.
-    px0, px1 = sorted((P.PWR_FACE_X + P.PWR_SIDE * 0.5, P.PWR_X_LIP))
-    pad = rrect_prism(px0, px1,
-                      P.PWR_SHELF_Z - 1.5, P.PWR_SLOT_Z1, 1.0,
-                      P.PWR_SLOT_Y0 - 1.5, -P.COVER_T)
+    # The DWEII module's pocket.  Built as its own assembly -- boss, less the module's
+    # volume, plus a lip back across the mouth -- because that lip is an UNDERCUT: it
+    # overhangs the pocket without making it any shallower, which a single cutter in
+    # build_pilots() cannot produce.  The module's lower edge tucks under it, the board
+    # swings in, and power_clamp.stl screws down over the top.
+    px0, px1 = sorted((P.PWR_FACE_X + P.PWR_SIDE * 0.5, P.PWR_X_SLOT))
+    boss = rrect_prism(px0, px1,
+                       P.PWR_SHELF_Z - 2.5, P.PWR_RET_Z + 3.0, 1.0,
+                       P.PWR_SLOT_Y0 - 1.5, -P.COVER_T)
+    qx0, qx1 = sorted((P.PWR_FACE_X, P.PWR_X_SLOT))
+    pocket = rrect_prism(qx0, qx1,
+                         P.PWR_SHELF_Z, P.PWR_SLOT_Z1, 0.5,
+                         P.PWR_SLOT_Y0, P.PWR_SLOT_Y1 + 1.0)
+    lx0, lx1 = sorted((P.PWR_X_LIP, P.PWR_X_SLOT))
+    lip = rrect_prism(lx0, lx1,
+                      P.PWR_SHELF_Z, P.PWR_SHELF_Z + P.PWR_LIP_H, 0.4,
+                      P.PWR_SLOT_Y0, P.PWR_SLOT_Y1)
+    pad = union([difference(boss, [pocket]), lip])
 
     return _clip(union(posts + ribs + bosses + [pad]), sil_poly)
 
@@ -324,14 +346,11 @@ def build_pilots():
                     P.BOSS_PILOT, P.BOARD_SEAT_Y - P.BOARD_SCREW_LEN,
                     P.BOARD_SEAT_Y + EPS, 48)
               for sx in (-1, 1) for sz in (-1, 1)]
-    # The module's slot, cut out of the cradle: open at the TOP so the board slides down
-    # into it socket-first, and open at the COVER end in y so the cover traps it once
-    # fitted.  It stops on the shelf at PWR_SHELF_Z -- the two ledges either side of the
-    # plug's channel, which is narrower than the board.
-    sx0, sx1 = sorted((P.PWR_FACE_X + P.PWR_SIDE * 0.4, P.PWR_X_SLOT))
-    holes.append(rrect_prism(sx0, sx1,
-                             P.PWR_SHELF_Z, P.PWR_SLOT_Z1 + 0.5, 0.5,
-                             P.PWR_SLOT_Y0, P.PWR_SLOT_Y1 + 1.0))
+    # The pocket itself is cut in build_pillars(), where the undercut lip can be added
+    # back.  What is left here is the pilot power_clamp.stl screws into, above it.
+    holes.append(cyl_x(P.PWR_RET_Y, P.PWR_RET_Z, P.PWR_RET_PILOT,
+                       *sorted((P.PWR_X_SLOT - P.PWR_SIDE * 2.0,
+                                P.PWR_X_SLOT + P.PWR_SIDE * P.PWR_RET_DEPTH))))
     # and the plug's channel below that shelf, out through the back of the chin
     qx0, qx1 = sorted((P.PWR_PORT_XA, P.PWR_PORT_XB))
     holes.append(rrect_prism(qx0, qx1,

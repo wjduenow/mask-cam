@@ -232,55 +232,55 @@ for _sx in (-1, 1):
                 P.BOARD_CZ + _sz * P.HOLE_DY / 2, P.BOSS_OD, P.BOARD_SEAT_Y,
                 P.BOSS_PILOT, P.BOARD_SCREW_LEN)
 
-print("\n=== 4c. the DWEII module has a cradle, and its plug can reach it ===")
-# The predecessor of this section checked a SparkFun USB-C breakout that is not in this
-# build at all -- mask_params carried its dimensions over from another project and the
-# part in hand was always the DWEII module (amazon.com/dp/B09YD5C9QC).  A mount was cut
-# for the wrong board.  These checks measure the cradle the module actually needs.
+print("\n=== 4c. the DWEII module has a pocket, a lip and a screw ===")
+# The pocket was a slide-in SLOT with a lid until 2026-08-20, which meant the module was
+# captured rather than fastened -- it could not be screwed down at all, and the soldered
+# wires had to be dressed while feeding a board into a blind slot.  It is an open pocket
+# with an undercut lip now, and power_clamp.stl screws over the top.
 
 
 def _span_x(y, z, start_x=0.0):
-    """Crossings walking OUTBOARD from the mask's mirror line, nearest first.
+    """Crossings walking OUTBOARD from the mirror line, nearest first.
 
-    Signed by PWR_SIDE so this reads the same whichever wall the cradle is on -- it
-    moved to +x when the SD card turned out to own the -x one.
+    Signed by PWR_SIDE so this reads the same whichever wall the pocket is on -- it has
+    now been on both, following the SD card.
     """
     d = float(P.PWR_SIDE)
-    o = np.array([[start_x, y, z]])
     loc, _, _ = M.ray.intersects_location(
-        ray_origins=o, ray_directions=np.array([[d, 0.0, 0.0]]), multiple_hits=True)
+        ray_origins=np.array([[start_x, y, z]]),
+        ray_directions=np.array([[d, 0.0, 0.0]]), multiple_hits=True)
     if not len(loc):
         return np.array([])
-    return np.sort(loc[:, 0].ravel() * d)[::1] * d
+    return np.sort(loc[:, 0].ravel() * d) * d
 
 
 _mid_z = (P.PWR_SHELF_Z + P.PWR_SLOT_Z1) / 2
-_xs = _span_x(P.PWR_PORT_CY, _mid_z)
-# Along -x from inside the bay the ray should cross the retaining lid (two faces), then
-# find the slot open behind it, then the wall.  The slot is a socket, not an open tray:
-# the board slides in from the top, which is why the lid runs the full width.
-_gap = abs(_xs[2] - _xs[1]) if len(_xs) >= 3 else 0.0
-check("the module's slot is open to its full depth", _gap >= P.PWR_SLOT_T,
-      f"{_gap:.2f} mm of clear slot behind the lid (x {_xs[1]:.2f}..{_xs[2]:.2f}), "
-      f"module is {P.PWR_T} mm thick" if len(_xs) >= 3
-      else f"crossings {np.round(_xs, 2).tolist()}")
+_xs = _span_x(P.PWR_RET_Y, _mid_z)
+check("the pocket is open to the bay", len(_xs) >= 1
+      and abs(abs(_xs[0]) - abs(P.PWR_FACE_X)) < 0.2,
+      f"nothing between the bay and the pocket's back at x={_xs[0]:+.2f}"
+      if len(_xs) else "no crossings -- the pocket is not there")
+check("the pocket is deep enough for the module",
+      len(_xs) >= 1 and abs(_xs[0]) - abs(P.PWR_X_SLOT) >= P.PWR_T,
+      f"{abs(_xs[0]) - abs(P.PWR_X_SLOT):.2f} mm from the mouth to the back, "
+      f"module is {P.PWR_T} mm thick" if len(_xs) else "")
 
-# The retaining lid: walking OUTBOARD, material must appear before the slot's mouth --
-# that overhang is what stops the board falling into the bay.  Written in |x| so it reads
-# the same on either wall; the cradle changed sides when the SD card claimed -x, and a
-# check that only knew about -x reported a lid at +18.50 as a failure.
-_lip = _span_x(P.PWR_SLOT_Y0 - 0.6, _mid_z)
-check("the slot has a lid to hold the board in",
-      len(_lip) >= 1 and abs(_lip[0]) <= abs(P.PWR_X_SLOT) + 0.1,
-      f"material at x={_lip[0]:+.2f} beside the slot mouth, "
-      f"slot mouth at {P.PWR_X_SLOT:+.2f}" if len(_lip) else "nothing there")
+# the undercut lip, low in the pocket: material must appear INBOARD of the module's back
+_lip = _span_x(P.PWR_RET_Y, P.PWR_SHELF_Z + P.PWR_LIP_H / 2)
+check("the bottom lip is there to tuck the module under",
+      len(_lip) >= 1 and abs(_lip[0]) <= abs(P.PWR_X_FACE) - 0.5,
+      f"lip face at x={_lip[0]:+.2f}, module's back sits at x={P.PWR_X_FACE:+.2f} -- "
+      f"{abs(P.PWR_X_FACE) - abs(_lip[0]):.2f} mm of overhang" if len(_lip)
+      else "nothing at the pocket's mouth low down")
 
-# the shelf the board's lower edge lands on
-_shelf = _span_x(P.PWR_SLOT_Y0 + 0.8, P.PWR_SHELF_Z - 1.0)
-check("there is a shelf under the board", len(_shelf) >= 1
-      and abs(_shelf[0]) <= abs(P.PWR_FACE_X),
-      f"solid at x={_shelf[0]:.2f} just below z={P.PWR_SHELF_Z:.1f}"
-      if len(_shelf) else "nothing under the slot -- the board would slide out")
+# the clamp's pilot, above the pocket
+_pil = _span_x(P.PWR_RET_Y, P.PWR_RET_Z)
+_want = abs(P.PWR_X_SLOT) + P.PWR_RET_DEPTH
+check("the clamp's pilot is bored", len(_pil) >= 1
+      and abs(abs(_pil[0]) - _want) < 0.2,
+      f"blind end at x={_pil[0]:+.2f}, want {P.PWR_SIDE*_want:+.2f} "
+      f"({P.PWR_RET_DEPTH:.1f} mm of Ø{P.PWR_RET_PILOT} thread)"
+      if len(_pil) else "no crossings on the pilot's axis")
 
 # the plug's channel, and what it leaves of the chin
 _py0 = P.PWR_PORT_CY - P.PWR_PORT_W / 2
@@ -301,8 +301,8 @@ for _z in np.arange(P.PWR_PORT_Z0 + 1.0, P.PWR_SHELF_Z - 0.5, 0.5):
 check("the plug's channel is clear to the socket", _blocked == 0,
       f"{_blocked} blocked sample(s)" if _blocked else
       f"open over x {min(P.PWR_PORT_XA,P.PWR_PORT_XB):+.1f}.."
-      f"{max(P.PWR_PORT_XA,P.PWR_PORT_XB):+.1f}, "
-      f"y {_py0:.2f}..{_py1:.2f}, z {P.PWR_PORT_Z0:.0f}..{P.PWR_SHELF_Z:.0f}")
+      f"{max(P.PWR_PORT_XA,P.PWR_PORT_XB):+.1f}, y {_py0:.2f}..{_py1:.2f}, "
+      f"z {P.PWR_PORT_Z0:.0f}..{P.PWR_SHELF_Z:.0f}")
 check("the port channel keeps FRONT_WALL relief", _thin >= P.FRONT_WALL,
       f"thinnest {_thin:.2f} mm of chin left in front of it (design min {P.FRONT_WALL})")
 

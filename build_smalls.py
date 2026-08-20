@@ -191,6 +191,53 @@ def build_batt_shim():
     return body
 
 
+# ───────────────────────────────────────────────────────────── DWEII power clamp
+POWER_CLAMP_T = 2.5       # plate thickness
+POWER_CLAMP_W = 16.0      # across y
+POWER_CLAMP_CLR = 0.3     # per side of the screw
+POWER_CLAMP_CSK = 5.4     # M3 flat head
+
+
+def build_power_clamp():
+    """Holds the DWEII module in its pocket with ONE screw, and nothing else.
+
+    The module used to be captured -- a lid across the pocket's mouth, the cover closing
+    its far end -- which meant it could not be fastened at all, and the soldered wires had
+    to be dressed while feeding a board into a blind slot.  So the pocket is open now and
+    this is what holds it: its lower edge tucks under a fixed lip in the mask, it swings
+    in, and this plate screws down over the top.
+
+    It bears on the module's PCB BACK -- fit the board components-toward-the-wall -- so
+    there is nothing to crush.  The pad stands PWR_LIP proud, which is exactly how far
+    inside the pocket's mouth that back face sits.
+
+    PRINT IT PAD SIDE UP, as exported: a flat plate on the bed, the countersink opening
+    downward as a self-supporting cone, and the pad laid down last.  No supports.
+    """
+    z0 = P.PWR_SLOT_Z1 - 5.0                     # reaches down over the module's top
+    z1 = P.PWR_RET_Z + 3.0
+    length = z1 - z0
+    c = (cq.Workplane("XY").rect(POWER_CLAMP_W, length).extrude(POWER_CLAMP_T)
+         .edges("|Z").fillet(2.0))
+    # the pad that reaches into the pocket and presses the board's back face
+    pad_len = P.PWR_SLOT_Z1 - z0 - 0.4
+    c = c.union(cq.Workplane("XY")
+                .moveTo(0, -length / 2 + pad_len / 2)
+                .rect(POWER_CLAMP_W - 3.0, pad_len)
+                .extrude(-P.PWR_LIP).edges("|Z").fillet(1.0))
+    # the screw, countersunk so nothing stands proud into the bay
+    sy = P.PWR_RET_Z - (z0 + z1) / 2
+    d = P.PWR_RET_PILOT + 2 * POWER_CLAMP_CLR
+    c = c.cut(cq.Workplane("XY").moveTo(0, sy).circle(d / 2)
+              .extrude(POWER_CLAMP_T + 2).translate((0, 0, -1)))
+    csk = (POWER_CLAMP_CSK - d) / 2
+    c = c.cut(cq.Workplane("XY").workplane(offset=POWER_CLAMP_T - csk)
+              .circle(d / 2).workplane(offset=csk).circle(POWER_CLAMP_CSK / 2)
+              .loft(combine=False).translate((0, sy, 0)))
+    c = c.rotate((0, 0, 0), (1, 0, 0), 180)
+    return c.translate((0, 0, -c.val().BoundingBox().zmin))
+
+
 # ───────────────────────────────────────────────────────────── depth shims, plugs
 def build_shims():
     """Three loose shims on one plate, spaced so they are easy to pick off the bed."""
@@ -224,6 +271,7 @@ def build_plugs():
 
 if __name__ == "__main__":
     for name, part in (("camera_clamp", build_clamp()),
+                       ("power_clamp", build_power_clamp()),
                        ("battery_shim", build_batt_shim()),
                        ("camera_shims", build_shims()),
                        ("eye_plugs", build_plugs())):
