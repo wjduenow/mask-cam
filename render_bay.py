@@ -50,11 +50,19 @@ for sx in (-1, 1):
 for s in (-1, 1):
     ring(s * P.EYE_X, P.EYE_Z, P.EYE_PUPIL_D, color="tab:blue", lw=1.2, ls="--")
 
-ax.add_patch(plt.Rectangle((P.PWR_FACE_X, P.PWR_SHELF_Z), P.PWR_T, P.PWR_W,
+ax.add_patch(plt.Rectangle((min(P.PWR_FACE_X, P.PWR_X_SLOT), P.PWR_SHELF_Z),
+                           P.PWR_SLOT_T, P.PWR_W,
                            fill=False, ec="tab:green", lw=1.6))
-ax.add_patch(plt.Rectangle((P.PWR_PORT_X0, P.PWR_PORT_Z0), P.PWR_PORT_T,
-                           P.PWR_SHELF_Z - P.PWR_PORT_Z0,
+ax.add_patch(plt.Rectangle((min(P.PWR_PORT_XA, P.PWR_PORT_XB), P.PWR_PORT_Z0),
+                           P.PWR_PORT_T, P.PWR_SHELF_Z - P.PWR_PORT_Z0,
                            fill=False, ec="tab:green", lw=1.0, ls=":"))
+# the SD card -- the thing that moved everything else
+ax.add_patch(plt.Rectangle((min(P.SD_X, P.SD_SIDE * P.PCB_W / 2), P.SD_Z0),
+                           P.SD_OUT, P.SD_Z1 - P.SD_Z0,
+                           fill=False, ec="tab:red", lw=1.6))
+ax.annotate("SD card, 7.6 mm proud\nof the board's edge",
+            (P.SD_X + 3, (P.SD_Z0 + P.SD_Z1) / 2), xytext=(-36, 30), fontsize=8,
+            color="tab:red", arrowprops=dict(arrowstyle="->", color="tab:red"))
 ax.add_patch(plt.Rectangle((-P.PCB_W / 2, P.BOARD_CZ - P.PCB_L / 2), P.PCB_W, P.PCB_L,
                            fill=False, ec="tab:orange", lw=1.0, ls=":"))
 
@@ -63,7 +71,7 @@ ax.annotate("cover posts (9, red)", (21, 36), xytext=(26, 16), fontsize=8,
 ax.annotate("board bosses (4)", (12, 36), xytext=(-4, 14), fontsize=8,
             color="tab:orange", arrowprops=dict(arrowstyle="->", color="tab:orange"))
 ax.annotate("DWEII module, on edge\nin its slot; plug enters\nfrom below (dotted)",
-            (P.PWR_FACE_X + P.PWR_T / 2, P.PWR_SHELF_Z + 12), xytext=(-37, 62),
+            (P.PWR_X_SLOT, P.PWR_SHELF_Z + 12), xytext=(26, 40),
             fontsize=8, color="tab:green",
             arrowprops=dict(arrowstyle="->", color="tab:green"))
 ax.annotate("eye pupils — posts now\nclear them by 10.4 mm", (-P.EYE_X, P.EYE_Z),

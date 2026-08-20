@@ -187,6 +187,14 @@ defects:
   merged — the mesh came apart into four bodies. Petals are not structural ground.
 - **The USB-C port cut sat at floor depth** instead of on the receptacle's midline, eating
   forward into the muzzle and leaving 1.28 mm of relief.
+- **The cam board is 38 mm wide, not 30.4.** With a microSD card seated, the slot region
+  juts **7.6 mm past one long edge**, and nothing in `mask_params.py` knew — the whole bay
+  was laid out around a bare PCB. Measured off the board's own 32 × 24 mm hole pattern in
+  an assembly photo, the card occupies **z 51.7–66.0** and reaches **x = −22.80**, which
+  put it straight through the DWEII cradle (4.3 mm of overlap) and through the cover post
+  at (−21, 59). The card cannot move — it is where the board's slot puts it — so the
+  cradle moved to the **+x** wall and the board-zone posts were re-cut around both. ⚠ The
+  z band is photo-scaled; `SD_MARGIN` carries 1.0 mm against it.
 - **A mount was cut for a part that is not in this build.** `mask_params.py` carried a
   `UC_*` block for a SparkFun-pattern USB-C breakout — 21.4 × 14.5 × 4.75, two M3 holes
   16.85 apart — copied from `../sonos-nest/hardware/jukebox-7`. README §7 had *already*
@@ -370,7 +378,10 @@ untouched.
    swell with age and a glued-in cell is a dead mask, which is the whole reason the shim
    is a separate printed part rather than a blob of epoxy.
 7. **Board** onto the four bosses, component side **facing forward**, USB-C pointing
-   **down**, 4 × M3 × 6 flat self-tapping.
+   **down**, 4 × M3 × 6 flat self-tapping. ⚠ **That orientation is what decides which
+   side the SD card sticks out** — component side forward puts it at −x, which is why the
+   DWEII cradle lives on the +x wall. Mount the board the other way up and the card
+   collides with the cradle.
 8. **Eye plugs**, pushed in from the front with tweezers.
 9. **Cover**, 10 × M3 × 8 flat self-tapping. Countersinks face the wall and must sit flush;
    a proud head rocks the mask.

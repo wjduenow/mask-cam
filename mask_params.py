@@ -51,6 +51,21 @@ EYE_DOME_R = 4.75 * MASK_SCALE      # beyond this the surface falls off a ~5 mm 
 # Identical to ../sonos-nest/hardware/cam-button/shell/button_params.py, which read them
 # out of nulllaborg/esp32s3-cam's own esp32s3_cam.step.  Do not re-derive.
 PCB_W, PCB_L, PCB_T = 30.4, 38.4, 1.60
+# ⚠ THE BOARD IS NOT 30.4 WIDE IN USE.  With a microSD card seated, that region juts
+# out to 38 mm overall -- 7.6 mm past one long edge -- and nothing in this file knew it,
+# so the whole bay was laid out around a bare PCB.  The card exits the side the COMPONENT
+# FACE looks away from: the board mounts component side FORWARD, and a card that exits to
+# the left when you look AT the component side with the USB-C down therefore ends up at
+# -x in the mask.
+# MEASURED off the board's own 32 x 24 mm hole pattern in the assembly photo (2026-08-20):
+# the card occupies z 51.7..66.0 and stands 6.9 mm proud.  7.6 is carried instead, being
+# what the 38 mm overall implies.  ⚠ Both are photo-scaled; one calliper reading across
+# the card's span would retire SD_MARGIN.
+SD_OUT   = 7.6            # how far the card protrudes past the PCB's edge
+SD_SIDE  = -1             # which side of the mask it protrudes toward
+SD_MARGIN = 1.0           # carried against the photo-scaled z band
+SD_Z0, SD_Z1 = 51.7 - SD_MARGIN, 66.0 + SD_MARGIN
+SD_X     = SD_SIDE * (PCB_W / 2 + SD_OUT)     # = -22.80, the card's outer edge
 HOLE_D = 3.20                   # M3 clearance, 4x
 HOLE_KEEPOUT = 6.40             # concentric pad -> boss OD must stay under this
 HOLE_DX, HOLE_DY = 24.0, 32.0   # the 4 holes sit at (±12, ±16)
@@ -373,7 +388,10 @@ COVER_CSK_ANG = 90.0
 #
 # What is left: z 44.25..59.65 is the only window on the -x side that clears both the
 # breakout below and the pupil above.  check_clearances() now asserts all three.
-POST_XY = [(21.0, 36.0), (-21.0, 59.0), (21.0, 59.0),
+# The board zone now has three claimants per wall, not two.  On -x the SD card owns
+# z 50.7..67.0; on +x the cradle owns z 29..54.5.  Once the pupils are cleared too, what
+# is left is z <= 47.5 on the -x wall and a ~2 mm window around z 59 on the +x wall.
+POST_XY = [(-21.0, 36.0), (-21.0, 45.5), (21.0, 59.0),
            (-20.0, 79.5), (20.0, 79.5)]
 POST_XY_BATT = [(-31.5, 112.0), (31.5, 112.0), (-31.5, 142.0), (31.5, 142.0)]
 POST_OD_BATT = 5.0
@@ -401,10 +419,17 @@ POST_OD_BATT = 5.0
 # No pad and no pilots: the module has no mounting holes, so the bay's own -x wall IS
 # the slot's back face.  That buys 3.0 mm of x back, which is what lets the retaining
 # lips exist at all without crowding the cam board.
-PWR_FACE_X  = -BAY_HW_UP                      # = -26.0, the slot's back face
+# ⚠ ON THE +x WALL, and that is the SD card's doing.  The cradle sat on -x until the
+# card turned up: it owns x -26.0..-18.5 over z 29..54.5, and the card reaches -22.80 over
+# z 50.7..67.0, so the two overlapped by 4.3 mm in x and 3.8 mm in z.  The card cannot
+# move -- it is where the board's own slot puts it -- so the cradle did.
+PWR_SIDE    = -SD_SIDE                        # = +1, the wall the card does NOT use
+PWR_FACE_X  = PWR_SIDE * BAY_HW_UP            # = +26.0, the slot's back face
 PWR_SLOT_T  = PWR_T + 0.8                     # =   6.3, slot depth across x
 PWR_SLOT_H  = PWR_H + 0.8                     # =  20.8, slot width across y
 PWR_LIP     = 1.2         # how far the slot's lips overhang, to hold the board in
+PWR_X_SLOT  = PWR_FACE_X - PWR_SIDE * PWR_SLOT_T      # = +19.70, the slot's inboard face
+PWR_X_LIP   = PWR_X_SLOT - PWR_SIDE * PWR_LIP         # = +18.50, the retaining lid
 # The module's 20 mm axis spans the bay's DEPTH, its rear edge against the cover, so the
 # cover traps it once fitted.  Its 25 mm axis runs up z from the shelf it rests on.
 PWR_SLOT_Y1 = -COVER_T                        # = -2.50, hard against the cover
@@ -422,7 +447,8 @@ PWR_PORT_CY = (PWR_SLOT_Y0 + PWR_SLOT_Y1) / 2 # = -12.90, the socket's assumed c
 # ⚠ That costs the plug's OVERMOULD ~0.9 mm on its outboard side.  A slim USB-C cable
 # fits; a chunky moulded one may not, and the answer is a slimmer cable, not a deeper
 # channel -- the chin is what is left of the mask's jaw here.
-PWR_PORT_X0 = PWR_FACE_X + 0.5                # = -25.5
+PWR_PORT_XA = PWR_FACE_X - PWR_SIDE * 0.5             # = +25.50
+PWR_PORT_XB = PWR_PORT_XA - PWR_SIDE * PWR_PORT_T     # = +16.50
 PWR_PORT_Z0 = 14.0        # how far down the chin the channel is opened.  MEASURED: this
                           # leaves 17.5 mm of relief at its thinnest -- back of the chin,
                           # nowhere near the face.

@@ -101,8 +101,7 @@ def check_clearances():
                  f"{'right' if sx > 0 else 'left'} pupil", d >= need,
                  f"centres {d:.2f} mm apart, need {need:.2f} -- a post inside a pupil "
                  f"bore caps it, and the bore is what makes the eye read black")
-    cx0 = P.PWR_FACE_X
-    cx1 = P.PWR_FACE_X + P.PWR_SLOT_T + P.PWR_LIP
+    cx0, cx1 = sorted((P.PWR_FACE_X, P.PWR_X_LIP))
     for x, z in P.POST_XY:
         r = P.POST_OD / 2
         clash = (not (x + r <= cx0 or x - r >= cx1)) and \
@@ -110,8 +109,28 @@ def check_clearances():
         must(f"cover post ({x:+.1f},{z:.0f}) clear of the DWEII cradle", not clash,
              f"post x {x-r:+.2f}..{x+r:+.2f} z {z-r:.2f}..{z+r:.2f} vs cradle "
              f"x {cx0:+.2f}..{cx1:+.2f} z {P.PWR_SHELF_Z:.2f}..{P.PWR_SLOT_Z1:.2f}")
-    must("the DWEII cradle clears the cam board", cx1 <= -P.PCB_W / 2 - 1.0,
-         f"cradle reaches x={cx1:.2f}, board starts at x={-P.PCB_W/2:.2f}")
+    inner = cx1 if P.PWR_SIDE < 0 else cx0
+    must("the DWEII cradle clears the cam board",
+         abs(inner) >= P.PCB_W / 2 + 1.0,
+         f"cradle reaches x={inner:+.2f}, board edge at x={P.PWR_SIDE*P.PCB_W/2:+.2f}")
+
+    # ⚠ THE SD CARD.  It is part of the board's envelope and nothing knew it until an
+    # assembly photo turned up: with a card seated the board is 38 mm across, not 30.4.
+    # Every post and the cradle has to clear it, and the card cannot move -- it is where
+    # the board's own slot puts it.
+    for x, z in P.POST_XY:
+        r = P.POST_OD / 2
+        in_x = (x - r < P.SD_X) if P.SD_SIDE < 0 else (x + r > P.SD_X)
+        clash = in_x and not (z + r <= P.SD_Z0 or z - r >= P.SD_Z1)
+        must(f"cover post ({x:+.1f},{z:.0f}) clear of the SD card", not clash,
+             f"post x {x-r:+.2f}..{x+r:+.2f} z {z-r:.1f}..{z+r:.1f} vs card reaching "
+             f"x={P.SD_X:+.2f} over z {P.SD_Z0:.1f}..{P.SD_Z1:.1f}")
+    must("the DWEII cradle is on the wall the SD card does not use",
+         P.PWR_SIDE == -P.SD_SIDE,
+         f"card at x={P.SD_X:+.2f}, cradle on the {'+x' if P.PWR_SIDE > 0 else '-x'} wall")
+    must("the SD card clears the bay wall",
+         abs(P.SD_X) <= P.BAY_HW_UP - 1.0,
+         f"card reaches x={P.SD_X:+.2f}, wall at {P.SD_SIDE*P.BAY_HW_UP:+.1f}")
     must("the DWEII module fits the bay's depth", P.PWR_H + 0.8 <= P.INTERIOR_UP,
          f"module is {P.PWR_H} mm across the bay's depth, which offers "
          f"{P.INTERIOR_UP:.2f} mm")
@@ -283,7 +302,8 @@ def build_pillars(sil_poly):
     # is then cut out of.  Added here, with the pillars, because it stands in the volume
     # the bay carve removes -- and cut afterwards, in build_pilots(), for the same reason
     # in reverse.
-    pad = rrect_prism(-P.BAY_HW_UP - 0.5, P.PWR_FACE_X + P.PWR_SLOT_T + P.PWR_LIP,
+    px0, px1 = sorted((P.PWR_FACE_X + P.PWR_SIDE * 0.5, P.PWR_X_LIP))
+    pad = rrect_prism(px0, px1,
                       P.PWR_SHELF_Z - 1.5, P.PWR_SLOT_Z1, 1.0,
                       P.PWR_SLOT_Y0 - 1.5, -P.COVER_T)
 
@@ -308,11 +328,13 @@ def build_pilots():
     # into it socket-first, and open at the COVER end in y so the cover traps it once
     # fitted.  It stops on the shelf at PWR_SHELF_Z -- the two ledges either side of the
     # plug's channel, which is narrower than the board.
-    holes.append(rrect_prism(P.PWR_FACE_X - 0.4, P.PWR_FACE_X + P.PWR_SLOT_T,
+    sx0, sx1 = sorted((P.PWR_FACE_X + P.PWR_SIDE * 0.4, P.PWR_X_SLOT))
+    holes.append(rrect_prism(sx0, sx1,
                              P.PWR_SHELF_Z, P.PWR_SLOT_Z1 + 0.5, 0.5,
                              P.PWR_SLOT_Y0, P.PWR_SLOT_Y1 + 1.0))
     # and the plug's channel below that shelf, out through the back of the chin
-    holes.append(rrect_prism(P.PWR_PORT_X0, P.PWR_PORT_X0 + P.PWR_PORT_T,
+    qx0, qx1 = sorted((P.PWR_PORT_XA, P.PWR_PORT_XB))
+    holes.append(rrect_prism(qx0, qx1,
                              P.PWR_PORT_Z0, P.PWR_SHELF_Z + 0.5, 1.0,
                              P.PWR_PORT_CY - P.PWR_PORT_W / 2,
                              P.PWR_PORT_CY + P.PWR_PORT_W / 2))

@@ -240,11 +240,18 @@ print("\n=== 4c. the DWEII module has a cradle, and its plug can reach it ===")
 
 
 def _span_x(y, z, start_x=0.0):
-    """Crossings along -x from inside the bay, nearest first."""
+    """Crossings walking OUTBOARD from the mask's mirror line, nearest first.
+
+    Signed by PWR_SIDE so this reads the same whichever wall the cradle is on -- it
+    moved to +x when the SD card turned out to own the -x one.
+    """
+    d = float(P.PWR_SIDE)
     o = np.array([[start_x, y, z]])
     loc, _, _ = M.ray.intersects_location(
-        ray_origins=o, ray_directions=np.array([[-1.0, 0.0, 0.0]]), multiple_hits=True)
-    return np.sort(loc[:, 0].ravel())[::-1] if len(loc) else np.array([])
+        ray_origins=o, ray_directions=np.array([[d, 0.0, 0.0]]), multiple_hits=True)
+    if not len(loc):
+        return np.array([])
+    return np.sort(loc[:, 0].ravel() * d)[::1] * d
 
 
 _mid_z = (P.PWR_SHELF_Z + P.PWR_SLOT_Z1) / 2
@@ -252,24 +259,26 @@ _xs = _span_x(P.PWR_PORT_CY, _mid_z)
 # Along -x from inside the bay the ray should cross the retaining lid (two faces), then
 # find the slot open behind it, then the wall.  The slot is a socket, not an open tray:
 # the board slides in from the top, which is why the lid runs the full width.
-_gap = (_xs[1] - _xs[2]) if len(_xs) >= 3 else 0.0
+_gap = abs(_xs[2] - _xs[1]) if len(_xs) >= 3 else 0.0
 check("the module's slot is open to its full depth", _gap >= P.PWR_SLOT_T,
       f"{_gap:.2f} mm of clear slot behind the lid (x {_xs[1]:.2f}..{_xs[2]:.2f}), "
       f"module is {P.PWR_T} mm thick" if len(_xs) >= 3
       else f"crossings {np.round(_xs, 2).tolist()}")
 
-# the retaining lips: at the slot's y edges there must be material where the slot's
-# mouth is, or the board just falls out into the bay
+# The retaining lid: walking OUTBOARD, material must appear before the slot's mouth --
+# that overhang is what stops the board falling into the bay.  Written in |x| so it reads
+# the same on either wall; the cradle changed sides when the SD card claimed -x, and a
+# check that only knew about -x reported a lid at +18.50 as a failure.
 _lip = _span_x(P.PWR_SLOT_Y0 - 0.6, _mid_z)
 check("the slot has a lid to hold the board in",
-      len(_lip) >= 1 and _lip[0] >= P.PWR_FACE_X + P.PWR_SLOT_T - 0.1,
-      f"material at x={_lip[0]:.2f} beside the slot mouth, "
-      f"slot mouth at {P.PWR_FACE_X + P.PWR_SLOT_T:.2f}" if len(_lip) else "nothing there")
+      len(_lip) >= 1 and abs(_lip[0]) <= abs(P.PWR_X_SLOT) + 0.1,
+      f"material at x={_lip[0]:+.2f} beside the slot mouth, "
+      f"slot mouth at {P.PWR_X_SLOT:+.2f}" if len(_lip) else "nothing there")
 
 # the shelf the board's lower edge lands on
 _shelf = _span_x(P.PWR_SLOT_Y0 + 0.8, P.PWR_SHELF_Z - 1.0)
 check("there is a shelf under the board", len(_shelf) >= 1
-      and _shelf[0] >= P.PWR_FACE_X + P.PWR_SLOT_T - 0.1,
+      and abs(_shelf[0]) <= abs(P.PWR_FACE_X),
       f"solid at x={_shelf[0]:.2f} just below z={P.PWR_SHELF_Z:.1f}"
       if len(_shelf) else "nothing under the slot -- the board would slide out")
 
@@ -278,7 +287,8 @@ _py0 = P.PWR_PORT_CY - P.PWR_PORT_W / 2
 _py1 = P.PWR_PORT_CY + P.PWR_PORT_W / 2
 _blocked, _thin = 0, 9e9
 for _z in np.arange(P.PWR_PORT_Z0 + 1.0, P.PWR_SHELF_Z - 0.5, 0.5):
-    for _x in np.arange(P.PWR_PORT_X0 + 0.3, P.PWR_PORT_X0 + P.PWR_PORT_T - 0.2, 0.5):
+    for _x in np.arange(min(P.PWR_PORT_XA, P.PWR_PORT_XB) + 0.3,
+                        max(P.PWR_PORT_XA, P.PWR_PORT_XB) - 0.2, 0.5):
         _loc, _, _ = M.ray.intersects_location(
             ray_origins=np.array([[_x, 60.0, _z]]),
             ray_directions=np.array([[0, -1.0, 0]]), multiple_hits=True)
@@ -290,7 +300,8 @@ for _z in np.arange(P.PWR_PORT_Z0 + 1.0, P.PWR_SHELF_Z - 0.5, 0.5):
         _thin = min(_thin, _py0 - _ys[0])
 check("the plug's channel is clear to the socket", _blocked == 0,
       f"{_blocked} blocked sample(s)" if _blocked else
-      f"open over x {P.PWR_PORT_X0:.1f}..{P.PWR_PORT_X0 + P.PWR_PORT_T:.1f}, "
+      f"open over x {min(P.PWR_PORT_XA,P.PWR_PORT_XB):+.1f}.."
+      f"{max(P.PWR_PORT_XA,P.PWR_PORT_XB):+.1f}, "
       f"y {_py0:.2f}..{_py1:.2f}, z {P.PWR_PORT_Z0:.0f}..{P.PWR_SHELF_Z:.0f}")
 check("the port channel keeps FRONT_WALL relief", _thin >= P.FRONT_WALL,
       f"thinnest {_thin:.2f} mm of chin left in front of it (design min {P.FRONT_WALL})")
