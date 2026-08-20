@@ -309,7 +309,44 @@ USB-C cable ──► DWEII  Type-C socket        (charges the cell)
                        5V     pads  ──► cam board J4 pin 1 (`5V`) + pin 2 (`GND`)
 ```
 
-Nothing depends on the cam board's own power path. It lives in the **CAM waist**, which has
+Nothing depends on the cam board's own power path.
+
+### ⚠️ Cell polarity — and why the LEDs will not tell you
+
+The module carries **four LEDs, a 25 %-per-segment fuel gauge**. The top segment pulses
+while charging and goes steady when it is done.
+
+**A reversed cell shows all four segments lit, exactly like a full one.** With the battery
+pair backwards the module reads its own open-circuit charger output and reports "full" —
+which is the same picture as a cell that is genuinely charged, so the gauge cannot be used
+to confirm the wiring. This happened during assembly on 2026-08-20.
+
+Two facts make it easy to catch before it matters:
+
+- **A new pouch is never full.** LiPos ship at storage charge, ~3.7–3.8 V, which is one or
+  two segments. Four segments on a cell you have not charged yet means the wiring, not the
+  charge.
+- **Meter it at the cell's own leads, not by wire colour.** Red/black is a convention, not
+  a guarantee.
+
+Bench-test the module **before** it goes in the pocket — once it is behind the clamp its
+pads face the wall and a probe will not reach them:
+
+| check | expected |
+|---|---|
+| cell voltage, at the cell's leads | 3.7 – 4.2 V |
+| `5V` pads, USB plugged in | ~5 V |
+| `5V` pads, USB **unplugged** | ~5 V — proves the cell is live in both directions |
+
+The third is the one that proves the battery pair, because it only works off the cell.
+
+**If a cell has been connected backwards**, the charge path may survive — it did here — but
+the protection circuit is what fails silently, and a module that charges and boosts
+normally can have a dead over-discharge cutoff. Watch the first full charge for heat, check
+the cell still reads ~4.1–4.2 V the next morning, and check the pouch for swelling. The
+modules come ten to a pack; spend a fresh one rather than trust a suspect one.
+
+It lives in the **CAM waist**, which has
 38 mm of interior and only ~10 of it used by the camera clamp.
 
 ### Finding the pads
