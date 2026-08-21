@@ -43,6 +43,20 @@ PYTHONPATH=. /home/wesd/Projects/printing/.venv/bin/python build_mask.py
 | `build_cover.py` / `build_stand.py` / `build_smalls.py` | seconds | CadQuery |
 | `verify_cover.py` / `verify_stand.py` / `verify_smalls.py` | ~1 min | |
 
+The **firmware** is a separate world with its own toolchain — PlatformIO, not the venv.
+`firmware/README.md` is its design document and it is current. In short:
+
+```bash
+cd firmware
+~/.platformio/penv/bin/pio run -t upload              # the application
+~/.platformio/penv/bin/pio run -e selftest -t upload  # hardware bring-up checks, 20 s
+~/.platformio/penv/bin/python tools/board.py frame /tmp/f.jpg   # grab a picture and LOOK
+```
+
+`pio device monitor` needs a TTY and cannot run from an agent session — `tools/board.py`
+is the way in. The board answers a USB console too: `s` status, `r` record, `l` list,
+`d` dump newest clip. `firmware/src/secrets.h` holds the WiFi and is gitignored.
+
 ## Things that will waste your time if you rediscover them
 
 - **`mesh.contains()` on the 1 M-face mask gets OOM-killed** past a few thousand points.
@@ -93,6 +107,17 @@ auto-starts on load current, tested, so `K` stays unwired and nothing comes out 
 cover. Last step in progress was the module's `5V ±` to the cam board's **square** `5V` pad
 and the `GND` below it, first and second down from the corner mounting hole. **The pad
 silkscreened `1` is GPIO1 and 5 V into it kills the board.**
+
+**Firmware:** brought up and verified on the hardware 2026-08-20. PSRAM (8 MB octal),
+camera, SD and a real photograph all confirmed — see `firmware/README.md` for the numbers.
+The application streams MJPEG and records MJPEG AVI clips to the card; a 454-frame clip was
+pulled off over USB and opened cleanly in ffprobe. **The sensor turned out to be an OV3660,
+not the OV2640 the README's optics section assumes** — flagged in both READMEs, not yet
+retired. WiFi, the web UI, the MJPEG stream and record/download/delete were all verified
+against the board on 2026-08-21; a clip pulled over HTTP and over USB came back
+byte-identical. **The radio is the bottleneck** — at −76 dBm the stream carries ~2.7 of the
+10 fps the sensor makes, and a 14 MB clip takes nine minutes to download. Untested:
+battery, and anything with the cover on.
 
 ### Open
 

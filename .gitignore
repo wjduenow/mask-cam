@@ -41,3 +41,16 @@ pic_IMG_7291.png
 pic_ceylon mask.png
 thumbnail_middle_v.png
 plate_1_v.png
+
+# ── firmware ──────────────────────────────────────────────────────────────────
+# PlatformIO's build tree and its per-machine metadata.  The toolchain, the core
+# and every object file regenerate from platformio.ini with `pio run`, and the
+# .elf/.bin are megabytes apiece.  The SOURCE under firmware/src is tracked.
+firmware/.pio/
+firmware/.vscode/
+firmware/CMakeLists.txt
+firmware/sdkconfig.*
+
+# Your WiFi credentials. firmware/src/secrets.h.example is the tracked template;
+# the real one never leaves this machine.
+firmware/src/secrets.h

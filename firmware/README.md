@@ -1,0 +1,179 @@
+# firmware — the software half of mask-cam
+
+The board is a **nulllab / emakefun ESP32-S3-CAM**, silkscreen `SP32S3 CAM V1.1`.
+Everything here follows the same rule the CAD side runs on: **verify against the hardware,
+not the datasheet.** What is written down was read off the part in hand.
+
+Two environments:
+
+| | what it is | when |
+|---|---|---|
+| **`mask-cam`** | the real thing — live MJPEG, AVI clips to microSD, web UI | default |
+| **`selftest`** | four questions the board answers about itself, in 20 s | when in doubt |
+
+---
+
+## Confirmed against this board, 2026-08-20
+
+| | | how |
+|---|---|---|
+| chip | ESP32-S3, rev v0.2, 2 cores @ 240 MHz | `esptool flash_id` |
+| flash | **8 MB**, eFuse says **quad** | `esptool flash_id` |
+| PSRAM | **8 MB octal** | `ESP.getPsramSize()` |
+| sensor | **OV3660** — PID `0x3660` | `esp_camera_sensor_get()` |
+| microSD | 32 GB SDHC, mounts **1-bit**, write round-trips | selftest |
+| USB | the S3's **own** USB (`303a:1001`), no bridge chip | `lsusb` |
+| SVGA frame | 21–69 kB, mean **25 kB** at quality 12 | 454-frame clip |
+| sustained | **10.0 fps at 800×600 while recording**, 1.4 % dropped | 44 s run |
+| SD write | typically 40 ms, **worst 299 ms** | see "the queue" below |
+| card life | ~0.27 MB/s at SVGA/10 fps → **~30 h** on 32 GB | measured |
+| WiFi | joins, **−76 dBm** from the bench to the AP | `/health` |
+| clock | NTP answers; clips name themselves `20260821-055559.avi` | the card |
+
+The pin map is in `src/board_pins.h`, from the vendor's own repo,
+[nulllaborg/esp32s3-cam](https://github.com/nulllaborg/esp32s3-cam). Two independent things
+corroborate it: the flash and PSRAM sizes it claims match what the part reports, and the
+GPIO3 flashlight it names is the LED the main README's cover section already warned leaks
+out through the vent slots.
+
+## Setting it up
+
+```bash
+cp src/secrets.h.example src/secrets.h     # then put your WiFi in it
+$EDITOR src/secrets.h                      # gitignored; it never leaves this machine
+
+~/.platformio/penv/bin/pio run -t upload             # the application
+~/.platformio/penv/bin/pio run -e selftest -t upload # the bring-up checks
+```
+
+Then `http://mask-cam.local/` — live view, a record button, the clip list, and a health
+readout. The stream is on port **81**; the page knows this.
+
+All of it was exercised against the board on 2026-08-21: the page, `/still` (800×600 JPEG),
+`/stream` (multipart, 27 frames in 10 s), `/rec` on and off, `/files`, `/download` and
+`/delete`, plus the path-traversal guards on the last two. A clip pulled over HTTP and the
+same clip pulled over USB came back **byte-identical**, and ffprobe opens both.
+
+`pio device monitor` needs a real terminal and dies without one, so:
+
+```bash
+~/.platformio/penv/bin/python tools/board.py log 25          # reset, print output
+~/.platformio/penv/bin/python tools/board.py frame out.jpg   # grab a picture, LOOK at it
+```
+
+## Talking to it over USB
+
+The board finishes up behind a screwed-down cover, and the day WiFi is the thing that broke
+is the day you need another way in. Everything the web UI does, the USB console does:
+
+| | |
+|---|---|
+| `s` | status — fps, clip, card, queue, temperature, link |
+| `r` | start / stop recording |
+| `l` | list the clips on the card |
+| `d` | dump the newest clip as base64, to be decoded at the other end |
+| `?` | this list |
+
+## How it fits together
+
+```
+  OV3660 ──► capture pump (core 1) ──┬──► published frame ──► /stream, /still
+                 10 fps              │
+                                     └──► 4-slot PSRAM queue ──► writer (core 0) ──► AVI
+```
+
+Three decisions worth knowing:
+
+**One pump, not two consumers.** The stream and the recorder both want frames from one
+sensor. If each called `esp_camera_fb_get()` they would halve each other's rate and starve
+each other unpredictably. A single task grabs at the target rate and publishes; everything
+else reads the publication.
+
+**The card gets its own task.** This was measured, not guessed. With the SD write on the
+capture path, a 240 ms write spike showed up as a stutter in the live view and pulled the
+sensor from 10.0 fps down to 7.7. Moving it behind a four-slot queue holds a steady 10.0.
+When the queue fills, frames are **dropped and counted** rather than silently stretching
+the frame interval — a recording that quietly runs slow is worse than one that admits it
+lost four frames. `dropped` is on the health page for exactly this reason.
+
+**Clips, not one long file.** AVI stores sizes it cannot know until the file is finished,
+so the header goes down as zeroes and is patched at close. A clip that is never closed —
+power cut mid-write — will not play. Recording in 60 s clips makes the blast radius of a
+power cut the last minute rather than everything.
+
+### ⚠ The radio is the bottleneck, not the board
+
+At **−76 dBm** — the bench, one floor from the AP — the numbers are sobering:
+
+| | |
+|---|---|
+| live stream | ~2.7 fps of the 10 the sensor is producing |
+| clip download | **~25 kB/s**, so a 14 MB clip takes about nine minutes |
+
+Nothing in the firmware is the limit here; the camera holds 10.0 fps throughout and the
+card takes it. This is signal strength, and the mask is going to hang somewhere with a
+metal-free but not necessarily closer line to the AP. If the stream matters more than the
+resolution, drop the framesize — VGA or QVGA in the UI costs a quarter of the bytes. If
+retrieval matters, pull the card; USB is ten times faster than this link.
+
+## Things that will waste your time if you rediscover them
+
+- **`board_build.arduino.memory_type = qio_opi`, and do not "tidy" it.** The flash is quad
+  but the PSRAM is octal. Set it to `qio_qspi` and PSRAM comes back zero, the camera
+  silently refuses any framesize above SVGA, and nothing says why.
+- **`ARDUINO_USB_MODE=1` + `ARDUINO_USB_CDC_ON_BOOT=1` are load-bearing.** The USB-C goes
+  to the S3's native USB. Without these, `Serial` goes to UART0 — which is not wired to
+  anything you can see, so a perfectly working board looks dead.
+- **The microSD has only CMD/CLK/DAT0 wired.** 1-bit is not a fallback, it is the only
+  mode. `SD_MMC.begin()` with its 4-bit default fails for a reason that has nothing to do
+  with the card.
+- **`pio device monitor` needs a TTY** — `termios.error: Inappropriate ioctl for device` is
+  the monitor failing, not the board. `tools/board.py` exists for this.
+- **A capture that returns a buffer is not a capture that returns a picture.** A dead data
+  line still hands back a structurally valid, entirely black JPEG. The selftest checks the
+  SOI marker and a plausible length; your eyes check the rest.
+- **The fallback clip counter used to restart at 1 on every boot** and overwrote
+  `clip0001.avi` without a word. It now asks the card what already exists. If NTP answers,
+  clips are named by wall-clock time and the question does not arise.
+- **This IDF's `esp_http_server` has no `HTTPD_503_SERVICE_UNAVAILABLE`.** Set the status
+  line by hand, or tell a viewer the mask is broken when it is merely busy.
+- **`WiFi.setSleep(true)` makes the board effectively unreachable.** Modem sleep parks the
+  radio between beacons; measured here, it turned a ping into **306–1244 ms** and HTTP
+  would not complete at all. With it off the same link answers in ~117 ms. It also saves
+  nothing in the case that matters, because streaming keeps the radio busy anyway. This
+  was a deliberate choice for heat, and the measurement overruled it.
+- **`HWCDC::write()` returns a SHORT count when the host stops reading, and every `Print`
+  method throws that return value away.** This silently lost 16 kB out of the middle of a
+  4 MB USB dump — producing a file that still opened and still played. Anything that
+  pushes bulk data over USB has to loop on the return value; `serial_write_all()` does.
+  `tools/board.py clip` checks the byte count against the size the board announced, and
+  the board says `---ABORTED FILE---` rather than `---END FILE---` if it gave up.
+- **Never order clips by filename.** There are two naming schemes — wall-clock once NTP
+  answers, `clipNNNN.avi` before it — and `"20260821-055559.avi" < "clip0001.avi"` because
+  `'2' < 'c'`. Ring mode sorted by name would delete the NEWEST footage first. Both
+  `delete_oldest_clip()` and `recorder_newest_clip()` use the card's modification time,
+  which also gets the pre-NTP clips right: they carry a 1970 stamp, and they genuinely are
+  the oldest.
+- Under WSL the board arrives over `usbipd`. A reset re-enumerates it, and the attachment
+  can drop with it.
+
+## Open
+
+- ⚠ **The sensor is an OV3660, and the main README's optics section assumes an OV2640.**
+  The 79° unvignetted cone was checked against "a stock OV2640 lens is 65–70°". That
+  conclusion probably survives — OV3660 modules ship with similar glass — but it is now an
+  assumption about a part we have no number for. One photograph through the finished
+  aperture retires it. The OV3660 also reaches **QXGA 2048×1536**, a step above the UXGA
+  the selftest uses and available in the UI.
+- **Which way is up.** The sensor's orientation has not been checked against how the mask
+  hangs. `vflip`/`hmirror` are one line in `capture_begin()` once the thing is mounted.
+- **Nothing has run on battery yet.** Streaming keeps the draw well above the DWEII boost's
+  load-current threshold, which is the good case; what has not been tested is what happens
+  to the queue and the card when the supply sags. Modem sleep is now off, which costs a
+  few tens of milliamps at idle — worth revisiting if battery life disappoints, but not by
+  simply turning it back on.
+- **Signal.** −76 dBm on the bench already halves what the stream can carry. Where the mask
+  actually hangs is now a networking question as well as a decorative one.
+- **Heat.** 56 °C on the bench, in free air, on a desk. The bay is sealed apart from the
+  cover's vent slots and the mask hangs vertically. The health page shows the die
+  temperature; watch it once the cover is on.

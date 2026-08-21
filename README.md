@@ -173,6 +173,14 @@ which widens the view — it can never make it worse.
 65–70°, so even at the pessimistic end the aperture never crops the sensor's image. The
 glass also sits 4.6 mm down a dark tunnel, so no lens is visible from the front.
 
+> ⚠️ **The sensor is an OV3660, not an OV2640.** Firmware bring-up read the PID off the
+> part on 2026-08-20: `0x3660`. The paragraph above was written against the OV2640's
+> figures. OV3660 modules ship with comparable glass, so the conclusion very probably
+> survives — but the 65–70° it leans on is now an assumption about a part we have not
+> measured, and only a photograph through the finished aperture will settle it. The
+> aperture is oversized against 79° anyway, which is the margin that makes this a footnote
+> rather than a problem. See `firmware/README.md`.
+
 Both eyeballs get **Ø12.6** bores and printed blanking plugs — the symmetry is what makes
 the brow bore read as ornament. The aperture itself is **not** scaled: it only has to pass
 the real Ø7.0 lens, so on the bigger mask it is proportionally smaller and harder to spot.
@@ -661,6 +669,7 @@ either measured on the hardware or verified against a manufacturer drawing:
 | header pins add 4 mm | **no pins fitted** | the board in hand |
 | board has a charger | **it does not** — VBAT reads 0 V | multimeter |
 | camera module depth | **6.20 mm** | calipers |
+| which sensor | **OV3660**, not OV2640 | PID `0x3660` read off the part |
 | DWEII module size | **25 × 20 mm** | manufacturer's dimension drawing |
 | board hole pattern | **24 × 32** | 40.00 mm diagonal |
 
