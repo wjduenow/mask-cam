@@ -118,7 +118,11 @@ against the board on 2026-08-21; a clip pulled over HTTP and over USB came back
 byte-identical. It **records on its own from boot and keeps a rolling ~30 h window**,
 deleting the oldest clip when the card runs low; clips carry a monotonic sequence prefix
 (`000700001_20260821-143808.avi`) because neither filename nor mtime gives a correct
-"oldest" across the clockless seconds after boot. **The radio is the bottleneck** — at −76 dBm the stream carries ~2.7 of the
+"oldest" across the clockless seconds after boot. **Motion detection is Phase 1:
+annotate, do not gate** — the ring still records everything and events land in
+`/motion.log` naming the clip and the offset into it. Decode is `JPG_SCALE_8X` only
+(39 ms measured; every other scale is ~310 ms because only 1/8 skips the IDCT).
+Whether it discriminates *real* motion is untested and is the point of Phase 1. **The radio is the bottleneck** — at −76 dBm the stream carries ~2.7 of the
 10 fps the sensor makes, and a 14 MB clip takes nine minutes to download. Untested:
 battery, and anything with the cover on.
 

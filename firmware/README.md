@@ -84,6 +84,7 @@ is the day you need another way in. Everything the web UI does, the USB console 
 | `r` | start / stop recording |
 | `l` | list the clips on the card |
 | `d` | dump the newest clip as base64, to be decoded at the other end |
+| `m` | recent motion events |
 | `?` | this list |
 
 ## How it fits together
@@ -127,6 +128,91 @@ power blip forever.
 Ring mode has to answer "which is oldest" at all times, including the seconds after boot
 when there is no clock yet, and neither obvious answer survives that — see the note in
 `recorder.cpp`. One NVS write per boot, not per clip.
+
+## Motion detection — Phase 1: it annotates, it does not gate
+
+The ring records everything exactly as before. The detector only writes events
+beside the footage, into `/motion.log`, each one naming the clip **and the offset
+into it**. A wrong threshold therefore costs a wrong label, never footage — which
+matters when the thing being tuned is behind a screwed-down cover.
+
+```
+GET /motion?n=40     recent events, newest first
+GET /motion?clear=1  wipe the log
+```
+```json
+{"t":"2026-08-21 15:51:04","clip":"001400000_20260821-155006.avi",
+ "into":55,"blocks":3,"total":108,"lum":53}
+```
+
+**How it works, and why each piece is there:**
+
+- **Decode at `JPG_SCALE_8X` only.** SVGA → 100×75, **39 ms measured on this board**
+  (and 39 ms again under live streaming + recording, not just on the bench). The
+  other scales cost ~310–340 ms because only 1/8 skips the IDCT — see
+  "Benchmarks" below. At 2 Hz this is ~8 % of one core.
+- **Straight to grayscale in the decode callback**, so the 1.44 MB RGB888 image is
+  never materialised at all.
+- **Count changed 8×8 blocks, never summed difference.** A 5 % brightness step and
+  a person occupying 5 % of frame are *numerically identical* under sum-of-absolute-
+  difference. Counting blocks separates them — and only a block count makes the
+  next item possible.
+- **Reject changes that are too global.** Above `mot_pct` (60 %) of blocks changed,
+  it is lighting or the AEC, never a person. This is the single highest-value
+  false-positive defence there is, and only two projects in the wild implement it.
+- **A second, cheaper veto**: the OV3660's overall luminance register `0x56A1`,
+  **0.65 ms** per read. Useless as a detector — it is one global number — which is
+  exactly what makes it a lighting-change detector. Measured as a *percentage*,
+  because the value is linear-domain and compresses into single digits in a dark
+  room.
+- **Rebaseline immediately** after any rejected change, or the lighting step trails
+  into the next comparison as fake motion.
+- **Two consecutive hits** (1 s at 2 Hz), a 15 s warm-up while AEC/AWB settle, and
+  a 5 s cooldown so one person walking through is one event.
+
+**Verified on the board, 2026-08-21:** the trigger path end-to-end (forced sensitive,
+events logged with clip and offset, cooldown spacing them exactly 5 s apart); the
+global rejector (a 2 % ceiling turned sensor noise into 14 rejections and no events);
+and no effect on recording — still 10.0 fps, still 56 °C. Dropping JPEG quality from
+12 to 30 changed **0 of 108 blocks**, so the 8×8 averaging at 1/8 scale is inherently
+immune to compression artefacts.
+
+**Not verified: whether it discriminates real motion.** That needs a person walking
+past, and it is the entire point of Phase 1 — run it for a week, read `/motion.log`,
+and tune `mot_diff` / `mot_min` / `mot_pct` live from the UI without reflashing.
+
+⚠ Expect a **TV or monitor in frame to trigger constantly.** A screen is *genuine*
+pixel motion; no frame-differencing detector rejects it. That needs region masking,
+which Phase 1 does not have.
+
+## Benchmarks — `pio run -e bench`
+
+Two numbers this design hinged on, measured here rather than taken from the web.
+
+**Decode cost.** It is a cliff, not a slope — only 1/8 skips the IDCT:
+
+| scale | out | SVGA | UXGA |
+|---|---|---|---|
+| **1/8** | 100×75 | **39.4 ms** | 151.9 ms |
+| 1/4 | 200×150 | 307.9 ms | 1226 ms |
+| 1/2 | 400×300 | 341.3 ms | 1362 ms |
+| 1/1 | 800×600 | 310.9 ms | 1241 ms |
+
+So there is exactly one usable scale for detection, and it is cheap enough that no
+JPEG-length prefilter is needed to avoid it.
+
+**The OV3660's 4×4 zone map at `0x5691–0x56A0` is real** — it reads back correlating
+**+0.968** with the decoded image's own zone means, and tracks a forced exposure sweep
+monotonically in both directions. As far as the research found, no ESP32 project reads
+it. **But it is not the free pre-gate it looks like:** 17 SCCB reads take **11.0 ms**,
+not the sub-millisecond the datasheet arithmetic suggests, because SCCB runs at 100 kHz
+and that is fixed in the prebuilt SDK. Sixteen numbers for 11 ms against 7 500 pixels
+for 39 ms is a bad trade, so only the single overall register survives, as the veto
+above.
+
+*(The first stimulus tried was the GPIO3 flashlight. It moved neither the registers nor
+the decoded image, so it tested the LED, not the sensor. Exposure is a stimulus that
+cannot fail.)*
 
 ## Testing the ring
 

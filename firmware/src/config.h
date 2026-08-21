@@ -90,6 +90,62 @@
 // mask on a wall, and it bounds both PSRAM and the heat they generate.
 #define MC_MAX_STREAM_CLIENTS 2
 
+// --- motion detection -------------------------------------------------------
+//
+// PHASE 1: the detector ANNOTATES, it does not gate. The ring keeps recording
+// everything exactly as before, and motion events are logged beside it. That
+// way a badly tuned threshold costs a wrong label instead of lost footage,
+// and there is a real false-positive record to tune against -- on a camera
+// that ends up behind a screwed-down cover, where "try it and see" is
+// expensive.
+#define MC_MOTION_ENABLED     true
+
+// 2 Hz. Measured on this board: an SVGA frame decodes at JPG_SCALE_8X in
+// 39.4 ms, so this is ~7.9 % of one core when the board is otherwise idle --
+// more under streaming and SD load, since it contends for the same cores.
+// 1/8 is the only scale worth using: 1/4, 1/2 and 1/1 all cost ~310-340 ms
+// because only 1/8 skips the IDCT.
+#define MC_MOTION_HZ          2
+
+// A block is "changed" if its mean absolute difference exceeds this. The
+// field converges on 12-15 across every project that publishes a number.
+#define MC_MOT_BLOCK_DIFF     12
+
+// ...and motion is declared when at least this many blocks changed. The grid
+// is 8x8 pixels over a 100x75 image, so 108 blocks; 6 is ~5.5 % of frame.
+#define MC_MOT_MIN_BLOCKS     6
+
+// The single most valuable false-positive defence there is. A 5 % brightness
+// step and a person occupying 5 % of frame are IDENTICAL under summed
+// difference; counting blocks separates them, and only counting blocks makes
+// a ceiling possible at all. Above this share of blocks changed, it is
+// lighting or the AEC, never a person.
+#define MC_MOT_GLOBAL_PCT     60
+
+// Nobody triggers on one frame. Two checks at 2 Hz is a one-second
+// confirmation, which suits a room.
+#define MC_MOT_CONSEC         2
+
+// The AEC and AWB are still settling for the first several seconds, and every
+// project that skips this reports false positives at startup.
+#define MC_MOT_WARMUP_MS      15000
+
+// Don't log the same person walking through as forty events.
+#define MC_MOT_COOLDOWN_MS    5000
+
+// The cheap veto. Reading the OV3660's overall average (0x56A1) costs 0.65 ms
+// -- 60x less than a decode. It is one global number, useless for detection,
+// which is exactly what makes it a lighting-change detector. Measured as a
+// percentage because the value is LINEAR-domain: in a dark room the whole
+// scale compresses into single digits, so a fixed step would be meaningless.
+#define MC_MOT_LUM_PCT        20
+#define MC_MOT_LUM_FLOOR      2
+
+// Events land beside the footage, not inside MC_REC_DIR -- the ring must
+// never consider the log a clip.
+#define MC_MOTION_LOG         "/motion.log"
+#define MC_MOTION_LOG_MAX     (512 * 1024)
+
 // --- health ----------------------------------------------------------------
 // The bay is sealed apart from the vents. Above this, the UI says so.
 #define MC_TEMP_WARN_C        70.0f

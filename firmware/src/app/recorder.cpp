@@ -751,3 +751,99 @@ bool recorder_dump_base64(const char *name) {
   Serial.println(ok ? "---END FILE---" : "---ABORTED FILE---");
   return ok;
 }
+
+// --- motion annotation -----------------------------------------------------
+
+void recorder_note_motion(uint16_t changed, uint16_t total, uint8_t lum,
+                          char *desc_out, size_t desc_len) {
+  // Seconds into the clip, taken from the clock rather than from the frame
+  // count: frames get dropped when the card stalls, and an offset that drifts
+  // against the footage is worse than no offset at all.
+  uint32_t into = (clip && clip_started_ms) ? (millis() - clip_started_ms) / 1000 : 0;
+  const char *which = st.clip[0] ? st.clip : "-";
+
+  char stamp[24];
+  time_t now = time(nullptr);
+  struct tm tm_now;
+  if (now > 1600000000 && localtime_r(&now, &tm_now))
+    strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &tm_now);
+  else
+    snprintf(stamp, sizeof(stamp), "up+%lus", (unsigned long)(millis() / 1000));
+
+  if (desc_out)
+    snprintf(desc_out, desc_len, "%s  %s +%lus  %u/%u blocks  lum %u",
+             stamp, which, (unsigned long)into, changed, total, lum);
+
+  if (!st.mounted) return;
+
+  // Rotate rather than grow without bound. One line is ~70 bytes, so the cap
+  // is thousands of events -- but this thing is meant to run for months.
+  File f = SD_MMC.open(MC_MOTION_LOG, FILE_APPEND);
+  if (f && f.size() > MC_MOTION_LOG_MAX) {
+    f.close();
+    SD_MMC.remove(MC_MOTION_LOG ".1");
+    SD_MMC.rename(MC_MOTION_LOG, MC_MOTION_LOG ".1");
+    f = SD_MMC.open(MC_MOTION_LOG, FILE_APPEND);
+  }
+  if (!f) return;
+  f.printf("%s\t%s\t%lu\t%u\t%u\t%u\n", stamp, which,
+           (unsigned long)into, changed, total, lum);
+  f.close();
+}
+
+String recorder_motion_json(int limit) {
+  String out = "[";
+  if (!st.mounted) return out + "]";
+  File f = SD_MMC.open(MC_MOTION_LOG, FILE_READ);
+  if (!f) return out + "]";
+
+  // Only the tail is interesting, and the whole file must never be pulled
+  // into RAM -- read a window off the end and drop the partial first line.
+  const size_t WINDOW = 16 * 1024;
+  size_t sz = f.size();
+  if (sz > WINDOW) f.seek(sz - WINDOW);
+  String blob = f.readString();
+  f.close();
+  if (sz > WINDOW) {
+    int nl = blob.indexOf('\n');
+    if (nl >= 0) blob = blob.substring(nl + 1);
+  }
+
+  // Walk backwards so the newest events come first and `limit` means the most
+  // recent ones, not the oldest.
+  int lines = 0;
+  int end = blob.length();
+  bool first = true;
+  while (end > 0 && lines < limit) {
+    int start = blob.lastIndexOf('\n', end - 1);
+    String line = blob.substring(start + 1, end);
+    end = start;
+    line.trim();
+    if (line.length()) {
+      int t1 = line.indexOf('\t');
+      int t2 = line.indexOf('\t', t1 + 1);
+      int t3 = line.indexOf('\t', t2 + 1);
+      int t4 = line.indexOf('\t', t3 + 1);
+      int t5 = line.indexOf('\t', t4 + 1);
+      if (t5 > 0) {
+        if (!first) out += ",";
+        out += "{\"t\":\"" + line.substring(0, t1) + "\"";
+        out += ",\"clip\":\"" + line.substring(t1 + 1, t2) + "\"";
+        out += ",\"into\":" + line.substring(t2 + 1, t3);
+        out += ",\"blocks\":" + line.substring(t3 + 1, t4);
+        out += ",\"total\":" + line.substring(t4 + 1, t5);
+        out += ",\"lum\":" + line.substring(t5 + 1) + "}";
+        first = false;
+        lines++;
+      }
+    }
+    if (start < 0) break;
+  }
+  return out + "]";
+}
+
+void recorder_clear_motion_log() {
+  if (!st.mounted) return;
+  SD_MMC.remove(MC_MOTION_LOG);
+  SD_MMC.remove(MC_MOTION_LOG ".1");
+}

@@ -50,6 +50,16 @@ bool   recorder_delete(const char *name);
 // everything the web UI can do has to be reachable over the wire too -- a
 // mask that can only be talked to over WiFi is a mask you cannot debug the
 // day WiFi is the thing that broke.
+// --- motion annotation -----------------------------------------------------
+// Phase 1: motion is LOGGED beside the footage, never used to gate it. The
+// recorder owns the card, so it owns the log too -- and it is the only thing
+// that knows which clip is open and how far into it we are, which is what
+// makes an event point at footage rather than at a wall-clock time.
+void recorder_note_motion(uint16_t changed, uint16_t total, uint8_t lum,
+                          char *desc_out, size_t desc_len);
+String recorder_motion_json(int limit);
+void   recorder_clear_motion_log();
+
 void recorder_print_listing();
 bool recorder_newest_clip(char *out, size_t n);
 bool recorder_dump_base64(const char *name);

@@ -20,6 +20,7 @@
 #include "capture.h"
 #include "recorder.h"
 #include "web.h"
+#include "detect.h"
 
 // The one file that is not in the repository. Fail loudly and usefully rather
 // than with forty lines of "WIFI_SSID was not declared in this scope".
@@ -62,6 +63,14 @@ static void console_status() {
   Serial.printf("health  %.0f C  heap %u  psram %u  up %lus\n",
                 temperatureRead(), (unsigned)ESP.getFreeHeap(),
                 (unsigned)ESP.getFreePsram(), (unsigned long)(millis() / 1000));
+  MotStats m; motion_stats(&m);
+  Serial.printf("motion  %s  %u checks, %u events, %u rejected as lighting\n",
+                m.enabled ? (m.running ? "on" : "starting") : "OFF",
+                m.checks, m.events, m.rejected_global);
+  Serial.printf("        last %u/%u blocks, decode %u ms, lum %u%s\n",
+                m.last_blocks, m.total_blocks, m.last_decode_ms, m.last_lum,
+                m.last_global ? "  [rejected: whole-scene change]" : "");
+  if (m.last_event[0]) Serial.printf("        last event: %s\n", m.last_event);
   if (s.last_error[0]) Serial.printf("error   %s\n", s.last_error);
 }
 
@@ -73,6 +82,10 @@ static void console(char c) {
       else                  { recorder_arm();    Serial.println("recording started"); }
       break;
     case 'l': recorder_print_listing(); break;
+    case 'm': {                       // recent motion events
+      Serial.println(recorder_motion_json(15));
+      break;
+    }
     case 'd': {                       // dump the newest clip, base64
       char name[64];
       if (recorder_newest_clip(name, sizeof(name))) recorder_dump_base64(name);
@@ -80,7 +93,8 @@ static void console(char c) {
       break;
     }
     case '?':
-      Serial.println("s status  r record on/off  l list clips  d dump newest clip");
+      Serial.println("s status  r record on/off  l list clips  d dump newest clip"
+                     "  m motion log");
       break;
     default: break;
   }
@@ -167,6 +181,10 @@ void setup() {
   // so starting it after the join threw away exactly the moment that recording
   // on boot is meant to catch. Nothing here needs an IP address.
   capture_start_pump();
+
+  // The detector rides on the pump's published frames, so it goes up after it
+  // and before the network -- nothing here needs an IP either.
+  if (motion_begin()) motion_start_task();
 
   wifi_connect();
 

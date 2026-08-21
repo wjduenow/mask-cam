@@ -1,6 +1,7 @@
 #include "web.h"
 #include "capture.h"
 #include "recorder.h"
+#include "detect.h"
 #include "../config.h"
 
 #include <Arduino.h>
@@ -61,8 +62,31 @@ a{color:#7fb2ff}
     <option value=10 selected>10</option><option value=15>15</option>
     <option value=20>20</option></select></label>
   <label><input type=checkbox id=ring> ring — <b>deletes oldest</b> to make room</label>
+  <label><input type=checkbox id=mot> motion</label>
 </div>
+<details id=tune><summary style="cursor:pointer;font-size:13px;opacity:.7">motion tuning</summary>
+<div class=row style="font-size:13px">
+  <label>block Δ <input id=md type=number min=1 max=80 style="width:60px"></label>
+  <label>min blocks <input id=mn type=number min=1 max=200 style="width:60px"></label>
+  <label>global % <input id=mp type=number min=10 max=100 style="width:60px"></label>
+  <label>rate Hz <input id=mh type=number min=1 max=10 style="width:60px"></label>
+  <button id=mapply style="padding:4px 10px">apply</button>
+  <span id=mlive style="opacity:.7"></span>
+</div>
+<div style="font-size:12px;opacity:.6;line-height:1.6;margin:4px 0 10px">
+  Phase 1: motion is <b>logged only</b> — it never starts or stops recording, so a
+  wrong threshold costs a wrong label, not footage. <b>block Δ</b> is how different an
+  8×8 block must be to count as changed; <b>min blocks</b> how many must change;
+  <b>global %</b> is the ceiling above which a change is treated as lighting rather
+  than motion, and is the setting that keeps the AEC from tripping it.
+</div>
+</details>
 <div id=stat></div>
+<div class=row><strong style="font-size:13px">motion</strong>
+  <button id=mrefresh style="padding:3px 9px;font-size:12px">refresh</button>
+  <button id=mclear style="padding:3px 9px;font-size:12px">clear log</button></div>
+<table id=mevents><tr><th>when<th>clip<th>at<th>blocks</tr></table>
+
 <div class=row><strong style="font-size:13px">recordings</strong>
   <button id=refresh style="padding:3px 9px;font-size:12px">refresh</button></div>
 <table id=files><tr><th>clip<th>size<th></tr></table>
@@ -109,10 +133,36 @@ $('#rec').onclick=async()=>{ const on=$('#rec').className!=='on';
   await fetch('/rec?on='+(on?1:0)); poll(); setTimeout(files,500); };
 $('#snap').onclick=()=>window.open('/still','_blank');
 $('#ring').onchange=()=>fetch('/config?ring='+($('#ring').checked?1:0));
+$('#mot').onchange=()=>fetch('/config?mot='+($('#mot').checked?1:0));
+$('#mapply').onclick=async()=>{
+  await fetch('/config?mot_diff='+$('#md').value+'&mot_min='+$('#mn').value
+             +'&mot_pct='+$('#mp').value+'&mot_hz='+$('#mh').value);
+  poll();
+};
+async function motion(){
+  const l=await (await fetch('/motion?n=40')).json();
+  $('#mevents').innerHTML='<tr><th>when<th>clip<th>at<th>blocks</tr>'+(l.length?l.map(e=>
+    '<tr><td>'+e.t+'<td><a href="/download?f='+e.clip+'">'+e.clip.replace(/\.avi$/,'')+'</a>'
+    +'<td>+'+e.into+'s<td>'+e.blocks+'/'+e.total).join('')
+    :'<tr><td colspan=4 style="opacity:.5">no events yet</tr>');
+}
+$('#mrefresh').onclick=motion;
+$('#mclear').onclick=async()=>{ if(confirm('Clear the motion log?')){
+  await fetch('/motion?clear=1'); motion(); }};
 for(const [id,key] of [['fs','framesize'],['q','quality'],['fps','fps']])
   $('#'+id).onchange=e=>fetch('/config?'+key+'='+e.target.value);
 $('#refresh').onclick=files;
-poll(); files(); setInterval(poll,2000);
+let tuned=false;
+const _poll=poll;
+poll=async function(){ await _poll();
+  try{ const h=await (await fetch('/health')).json();
+    $('#mot').checked=h.mot;
+    $('#mlive').textContent='live: '+h.mot_blocks+'/'+h.mot_total+' blocks, '+h.mot_ms+' ms';
+    if(!tuned){ $('#md').value=h.mot_diff; $('#mn').value=h.mot_min;
+                $('#mp').value=h.mot_pct;  $('#mh').value=h.mot_hz; tuned=true; }
+  }catch(e){}
+};
+poll(); files(); motion(); setInterval(poll,2000); setInterval(motion,15000);
 </script>
 )HTML";
 
@@ -189,6 +239,20 @@ static esp_err_t h_health(httpd_req_t *r) {
   j += ",\"temp_c\":" + String(temperatureRead(), 1);
   j += ",\"rssi\":" + String(WiFi.RSSI());
   j += ",\"viewers\":" + String(stream_clients);
+  MotStats m; motion_stats(&m);
+  j += ",\"mot\":" + String(m.enabled ? "true" : "false");
+  j += ",\"mot_checks\":" + String(m.checks);
+  j += ",\"mot_events\":" + String(m.events);
+  j += ",\"mot_rejected\":" + String(m.rejected_global);
+  j += ",\"mot_blocks\":" + String(m.last_blocks);
+  j += ",\"mot_total\":" + String(m.total_blocks);
+  j += ",\"mot_ms\":" + String(m.last_decode_ms);
+  j += ",\"mot_lum\":" + String(m.last_lum);
+  j += ",\"mot_global\":" + String(m.last_global ? "true" : "false");
+  j += ",\"mot_last\":\"" + String(m.last_event) + "\"";
+  int bd, mb, gp, hz; motion_get_params(&bd, &mb, &gp, &hz);
+  j += ",\"mot_diff\":" + String(bd) + ",\"mot_min\":" + String(mb);
+  j += ",\"mot_pct\":" + String(gp) + ",\"mot_hz\":" + String(hz);
   j += ",\"uptime_s\":" + String(millis() / 1000);
   j += ",\"error\":\"" + String(s.last_error) + "\"";
   return send_json(r, j + "}");
@@ -224,10 +288,29 @@ static esp_err_t h_config(httpd_req_t *r) {
   if (query_int(r, "quality", &v))   capture_set_quality(v);
   if (query_int(r, "fps", &v))       capture_set_fps(v);
   if (query_int(r, "ring", &v))      recorder_set_ring(v != 0);
+  if (query_int(r, "mot", &v))       motion_set_enabled(v != 0);
+  {
+    int bd, mb, gp, hz; motion_get_params(&bd, &mb, &gp, &hz);
+    if (query_int(r, "mot_diff", &v)) bd = v;
+    if (query_int(r, "mot_min", &v))  mb = v;
+    if (query_int(r, "mot_pct", &v))  gp = v;
+    if (query_int(r, "mot_hz", &v))   hz = v;
+    motion_set_params(bd, mb, gp, hz);
+  }
   return send_json(r, "{\"ok\":true}");
 }
 
 static esp_err_t h_files(httpd_req_t *r) { return send_json(r, recorder_list_json()); }
+
+static esp_err_t h_motion(httpd_req_t *r) {
+  int n = 40;
+  query_int(r, "n", &n);
+  if (n < 1) n = 1;
+  if (n > 200) n = 200;
+  int clear = 0;
+  if (query_int(r, "clear", &clear) && clear) recorder_clear_motion_log();
+  return send_json(r, recorder_motion_json(n));
+}
 
 static esp_err_t h_delete(httpd_req_t *r) {
   char name[64];
@@ -338,6 +421,7 @@ bool web_begin() {
   reg(http_srv, "/rec",      h_rec);
   reg(http_srv, "/config",   h_config);
   reg(http_srv, "/files",    h_files);
+  reg(http_srv, "/motion",   h_motion);
   reg(http_srv, "/delete",   h_delete);
   reg(http_srv, "/download", h_download);
 
