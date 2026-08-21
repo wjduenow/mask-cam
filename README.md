@@ -381,13 +381,35 @@ modules come ten to a pack; spend a fresh one rather than trust a suspect one.
 It lives in the **CAM waist**, which has
 38 mm of interior and only ~10 of it used by the camera clamp.
 
-### Finding the pads
+### Finding the pads — and WHICH of the two 5V pads to use
 
-On the cam board's back, top row, reading left → right:
-`0` `14` `47` `NC` `48` `1` `GND` `5V` — the square pad is `5V`, pin 1.
+CONFIRMED against the board in hand, 2026-08-20. It is a **column** down the back's left
+edge, not a row, but the sequence is as recorded — and the **square pad marks pin 1**:
 
-⚠️ The pad marked **`1` is GPIO1, not a power pin.** It is two along from `5V` and is the
-easy one to hit by mistake.
+```
+   left edge, plated through-holes        middle, four flat SMD pads
+   ────────────────────────────────       ──────────────────────────
+     5V    ← SQUARE pad, pin 1              GND   5V   47   48
+     GND                                          ↑
+     1     ← GPIO1                                same net, DO NOT USE
+     48
+```
+
+**Both `5V` pads are the same rail. Solder to the EDGE pair.** The reason is what each one
+sits beside:
+
+| | `5V`'s neighbours | a solder bridge gives you |
+|---|---|---|
+| edge column | end of row, and `GND` | 5 V shorted to GND — the supply current-limits, nothing dies |
+| middle row | `GND` one side, **`47`** the other | **5 V into GPIO47 — dead S3** |
+
+The middle pads are small, close together and flanked by GPIOs; the edge pads are plated
+through-holes whose only live neighbour is ground, so the worst case is a short you notice
+rather than a part you have destroyed. Through-holes also take wire strain, where a flat
+SMD pad lifts.
+
+⚠️ The pad marked **`1` is GPIO1, not a power pin.** It is two below `5V` on the same
+column and is the easy one to hit by mistake.
 
 ---
 
