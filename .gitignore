@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 
+# the bundled skill ships without its own history or caches
+.claude/skills/*/.git/
+.claude/skills/*/__pycache__/
+
 # Regenerable by build_all.py --force from Sri_Lankan_Mask_2.3mf, and far too big to
 # version: the mask alone is 50 MB of ASCII triangles.  The donor 3MF and mask_cam.3mf
 # ARE tracked -- the donor because nothing rebuilds without it, and mask_cam.3mf because

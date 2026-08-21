@@ -43,6 +43,45 @@ solid modelling, the measurement scripts, and the checkers that refuse to let it
 
 ---
 
+## 0.5 Where this stands
+
+Everything in this repository builds and passes its checkers. What is **printed** and what
+is **current** are not the same thing:
+
+| | state |
+|---|---|
+| `mask_cam.stl` | built + verified — **not yet printed** in this form |
+| `cover.stl` | built + verified — **not yet printed** in this form |
+| `power_clamp.stl` | new — not yet printed |
+| `camera_clamp.stl` | **printed, fits** |
+| `battery_shim.stl`, `camera_shims.stl`, `eye_plugs.stl` | built + verified |
+
+An earlier mask and cover were printed and are superseded — they predate the cover posts,
+the board bosses, the SD-card clearance and the DWEII pocket.
+
+**Power is wired** as far as the cell → module pair; the module's `5V ±` to the cam board
+was the step in progress. The boost auto-starts, so nothing needs to come out through the
+cover.
+
+Two numbers are still soft, both flagged where they are used: the SD card's span along the
+cam board (photo-scaled, `SD_MARGIN` carries 1.0 mm against it) and the DWEII module's
+thickness (not dimensioned on its drawing; the pocket is cut oversize so it cannot bite).
+
+One decision is open: the **USB-C port arrangement**. Today the plug enters from under the
+chin and needs a slim cable. A cable feed-through with the module somewhere roomier was
+raised and never settled.
+
+---
+
+### Resuming with Claude
+
+`CLAUDE.md` holds the operational notes — how to run things, how long each step takes, the
+measurement traps that cost time here, and the two rules the project runs on. It loads
+automatically. `.claude/skills/parametric-3d-printing/` is bundled so CadQuery work has its
+reference to hand.
+
+---
+
 ## 1. The idea: carve the bay out of the relief, don't add a box to the back
 
 The donor looks like a thin shell and is not. Ray-sampling it shows **8–27 mm of solid
