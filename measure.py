@@ -8,11 +8,29 @@ import numpy as np
 
 _G = None
 
+# The sampled grids are NOT in the repository, and cannot be: pod.npz carries YF, a
+# 0.5 mm height map of the donor's visible face, which is the donor's artistic content in
+# numerical form.  Redistributing it would be redistributing the model.  So the grids are
+# gitignored and regenerate from your own copy of the donor -- and a bare
+# FileNotFoundError does not say any of that, which is why this exists.
+def _load_grid(name):
+    try:
+        return np.load(name)
+    except FileNotFoundError:
+        raise SystemExit(
+            f"\n{name} is missing -- the sampled surface grids are not in this repo.\n"
+            f"\nThey are derived from the donor model, which is Tbridge3D's and is not\n"
+            f"redistributable (see README section 0).  Put your own copy here as\n"
+            f"Sri_Lankan_Mask_2.3mf and run:\n"
+            f"\n    python build_all.py --force\n"
+            f"\nwhich re-samples the donor and rebuilds every derived file.  Nothing in\n"
+            f"this project -- not even `import mask_params` -- works before that.\n")
+
 
 def grid():
     global _G
     if _G is None:
-        d = np.load("pod.npz")
+        d = _load_grid("pod.npz")
         S = np.where(d["solid"], -d["YF"], np.nan)
         # gaps inside the outline (tooth slots, petal slots) constrain nothing
         S = np.where(d["holes"], np.inf, S)
@@ -85,7 +103,7 @@ _RAW = None
 def _load():
     global _RAW
     if _RAW is None:
-        _RAW = np.load("pod.npz")
+        _RAW = _load_grid("pod.npz")
     return _RAW
 
 

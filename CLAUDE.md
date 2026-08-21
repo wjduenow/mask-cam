@@ -20,6 +20,13 @@ gitignored too. All of them regenerate:
 python build_all.py --force      # re-samples the donor, rebuilds everything, verifies
 ```
 
+`import mask_params` derives every floor and seat from `pod.npz` at import time, so it
+fails before anything else can run. `measure.py` says so in as many words rather than
+raising a bare `FileNotFoundError`. **The grids stay out of the repo permanently** —
+`pod.npz` carries `YF`, a 0.5 mm height map of the donor's visible face, which is the
+donor's artistic content in numerical form. Do not be tempted to check them in to make a
+clone self-contained.
+
 ## Running things
 
 The interpreter is the venv one directory up, and the scripts import each other by name,
