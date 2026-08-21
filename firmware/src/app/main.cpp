@@ -21,6 +21,7 @@
 #include "recorder.h"
 #include "web.h"
 #include "detect.h"
+#include "ota.h"
 
 // The one file that is not in the repository. Fail loudly and usefully rather
 // than with forty lines of "WIFI_SSID was not declared in this scope".
@@ -63,6 +64,9 @@ static void console_status() {
   Serial.printf("health  %.0f C  heap %u  psram %u  up %lus\n",
                 temperatureRead(), (unsigned)ESP.getFreeHeap(),
                 (unsigned)ESP.getFreePsram(), (unsigned long)(millis() / 1000));
+  OtaStats o; ota_stats(&o);
+  Serial.printf("fw      built %s %s, running from '%s'%s\n", __DATE__, __TIME__,
+                o.running_part, o.active ? "  [OTA IN PROGRESS]" : "");
   MotStats m; motion_stats(&m);
   Serial.printf("motion  %s  %u checks, %u events, %u rejected as lighting\n",
                 m.enabled ? (m.running ? "on" : "starting") : "OFF",
@@ -190,6 +194,10 @@ void setup() {
 
   if (!web_begin())
     Serial.println("!! http server did not start");
+
+  // Last, because it needs the network. Once the cover is on, this is the only
+  // way firmware ever changes again.
+  ota_begin();
 
   Serial.println("ready.  ? for the console commands\n");
 }

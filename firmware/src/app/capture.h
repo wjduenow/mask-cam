@@ -37,5 +37,10 @@ bool capture_set_framesize(framesize_t fs);
 bool capture_set_quality(int q);
 void capture_set_fps(int fps);
 
+// Stand the pump down. Writing the app partition stalls the cache, and a
+// camera DMA plus PSRAM traffic through that is asking for a corrupt frame or
+// a watchdog. Used only by OTA.
+void capture_set_paused(bool paused);
+
 void capture_stats(CapStats *out);
 const char *capture_sensor_name();

@@ -9,6 +9,7 @@
 #include <freertos/semphr.h>
 
 static CapStats st;
+static volatile bool paused = false;
 
 // The published frame. One writer (the pump), several readers (stream
 // clients), so a plain mutex is enough -- readers copy out and let go rather
@@ -105,6 +106,8 @@ static void pump_task(void *) {
   uint32_t window_t0 = millis(), window_frames = 0;
 
   for (;;) {
+    if (paused) { vTaskDelay(pdMS_TO_TICKS(100)); continue; }
+
     uint8_t fps = st.fps_target ? st.fps_target : 1;
     TickType_t period = pdMS_TO_TICKS(1000 / fps);
     if (period < 1) period = 1;
@@ -166,6 +169,11 @@ void capture_set_fps(int fps) {
   if (fps < 1) fps = 1;
   if (fps > 30) fps = 30;
   st.fps_target = fps;
+}
+
+void capture_set_paused(bool p) {
+  paused = p;
+  st.running = !p;
 }
 
 void capture_stats(CapStats *out) { *out = st; }

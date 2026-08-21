@@ -122,7 +122,13 @@ deleting the oldest clip when the card runs low; clips carry a monotonic sequenc
 annotate, do not gate** — the ring still records everything and events land in
 `/motion.log` naming the clip and the offset into it. Decode is `JPG_SCALE_8X` only
 (39 ms measured; every other scale is ~310 ms because only 1/8 skips the IDCT).
-Whether it discriminates *real* motion is untested and is the point of Phase 1. **The radio is the bottleneck** — at −76 dBm the stream carries ~2.7 of the
+Whether it discriminates *real* motion is untested and is the point of Phase 1.
+
+**OTA works, both ways, and is not optional:** once the cover is on there is no wired path
+to the ESP32 — the outside USB-C goes to the *power* module. `espota` (~63 s) or
+`POST /update` (~7 s, 10x faster) both write the inactive app slot, so a failed upload
+cannot brick it; `/health` shows the slot flipping `app0`/`app1`. `OTA_PASSWORD` in
+`secrets.h` gates both. **The radio is the bottleneck** — at −76 dBm the stream carries ~2.7 of the
 10 fps the sensor makes, and a 14 MB clip takes nine minutes to download. Untested:
 battery, and anything with the cover on.
 

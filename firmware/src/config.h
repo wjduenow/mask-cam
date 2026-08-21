@@ -146,6 +146,24 @@
 #define MC_MOTION_LOG         "/motion.log"
 #define MC_MOTION_LOG_MAX     (512 * 1024)
 
+// --- OTA --------------------------------------------------------------------
+//
+// This is the feature that decides whether the mask is a write-once device.
+// The one USB-C that reaches the outside goes to the POWER module's socket,
+// for charging; the ESP32's own USB is on the cam board, inside the bay,
+// behind ten screws and the cover. Once assembled there is no wired path to
+// this chip at all -- so over-the-air is not a convenience here, it is the
+// only way firmware ever changes again.
+//
+// The partition table already provides for it: default_8MB.csv gives two
+// 3.3 MB app slots and an otadata block, and the image is 936 kB. A failed
+// upload writes only to the INACTIVE slot, so the running firmware survives.
+#define MC_OTA_ENABLED        true
+
+// Set OTA_PASSWORD in secrets.h to require one. Without it, anyone on the
+// network can reflash the mask.
+#define MC_OTA_PORT           3232
+
 // --- health ----------------------------------------------------------------
 // The bay is sealed apart from the vents. Above this, the UI says so.
 #define MC_TEMP_WARN_C        70.0f

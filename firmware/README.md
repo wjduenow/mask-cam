@@ -129,6 +129,60 @@ Ring mode has to answer "which is oldest" at all times, including the seconds af
 when there is no clock yet, and neither obvious answer survives that — see the note in
 `recorder.cpp`. One NVS write per boot, not per clip.
 
+## Updating it over the air — and why that is not optional
+
+⚠️ **Once the cover is on there is no wired path to this chip.** The USB-C that reaches
+the outside goes to the **power module's** charging socket; the ESP32's own USB is on the
+cam board, inside the sealed bay, behind ten screws. The USB console described above stops
+being reachable the moment the mask is assembled. OTA is the only way firmware ever
+changes after that.
+
+The flash was already laid out for it — `default_8MB.csv` gives two 3.3 MB app slots and
+an `otadata` block, and the image is under 1 MB.
+
+**Two routes, one mechanism.**
+
+```bash
+# 1. espota -- keeps the normal workflow, just over WiFi
+PLATFORMIO_UPLOAD_PORT=mask-cam.local PLATFORMIO_UPLOAD_FLAGS="--auth=$OTA_PASSWORD" \
+  ~/.platformio/penv/bin/pio run -e mask-cam -t upload
+
+# 2. the web route -- a file picker under "firmware" at http://mask-cam.local/
+#    or by hand:
+curl -X POST -H "X-OTA-Key: $OTA_PASSWORD" \
+     --data-binary @.pio/build/mask-cam/firmware.bin http://mask-cam.local/update
+```
+
+**The web route is ~10× faster** — 6.6 s at 146–162 kB/s against espota's 63 s for the same
+image, because espota acknowledges every chunk. Use espota when you want one command; use
+the web form from a phone, or when there is no toolchain to hand.
+
+**Why it cannot brick the mask.** `Update` writes to the **inactive** app slot and only
+flips `otadata` once the whole image has arrived and its checksum verifies. A dropped
+upload leaves the running firmware exactly where it was. Verified deliberately rather than
+assumed: killing an upload at ~30 % left the same build in the same slot, still recording,
+with `ota_err` reading `connection dropped mid-upload`.
+
+**What it stands down first, and in this order:** the recorder (and it *waits* for the clip
+to close — an AVI whose header was never patched will not play, so rebooting mid-clip
+throws away the last minute for nothing), then the camera pump (writing flash stalls the
+cache, and camera DMA plus PSRAM traffic through a stalled cache is how you get a corrupt
+frame or a watchdog), then the detector. On a failed update all three come back by
+themselves.
+
+`/health` reports `fw_build`, `fw_part` (`app0`/`app1`) and `ota_auth`, which is how you
+confirm an update actually landed — **the slot flips**.
+
+⚠️ `OTA_PASSWORD` lives in `secrets.h` and gates **both** routes. Without it anyone on the
+network can replace the firmware, and the UI and boot log both say so. This is plain HTTP
+on your own LAN: the password is not encrypted in transit, it only stops the casual case.
+
+**Verified end to end, 2026-08-21:** espota `app0 → app1`; the web route `app1 → app0`;
+wrong password → 401; a 19-byte body → 400 without erasing anything; an aborted upload
+survived with the running firmware intact and the camera resumed. The last of those fixes
+— an error message that used to read `update failed: No Error` when the *socket* died —
+was itself shipped to the board over the air.
+
 ## Motion detection — Phase 1: it annotates, it does not gate
 
 The ring records everything exactly as before. The detector only writes events
