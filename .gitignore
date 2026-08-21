@@ -16,3 +16,24 @@ mask_cam_asprinted.stl
 # Sri_Lankan_Mask_2.3mf, unzipped -- 89 MB of XML that `unzip Sri_Lankan_Mask_2.3mf -d
 # extracted` reproduces exactly.  The archive is tracked; its expansion is not.
 extracted/
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# THE DONOR MODEL IS NOT REDISTRIBUTABLE, and is therefore not in this repository.
+#
+#   Sri Lankan Mask (Gini Raksha), by Tbridge3D
+#   Standard Digital File License -- print for yourself, do not re-upload.
+#
+# Everything here is built FROM it and none of it can be built without it.  Buy or
+# download your own copy, drop it in beside these scripts under the name below, and
+# `python build_all.py --force` will regenerate every derived file.  mask_cam.3mf is
+# excluded for the same reason: it carries the donor's geometry unchanged.
+Sri_Lankan_Mask_2.3mf
+mask_cam.3mf
+
+# The designer's own product photographs, lifted out of that 3MF.  Same licence, same
+# reason.  The analysis renders (face_map, cavity, back_analysis, ...) are ours and stay.
+pic_IMG_7289.png
+pic_IMG_7291.png
+pic_ceylon mask.png
+thumbnail_middle_v.png
+plate_1_v.png

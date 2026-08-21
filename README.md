@@ -19,6 +19,30 @@ hangs on a wall or drops onto a printed stand, using the same two mounting point
 
 ---
 
+## 0. You need the donor model — it is not in this repository
+
+Everything here is a **conversion of a third-party model**, and none of it builds without
+that model:
+
+> **Sri Lankan Mask (Gini Raksha)** — designer **Tbridge3D** — *Standard Digital File
+> License*
+
+That licence covers printing it yourself; it does **not** cover redistribution, so the
+file is deliberately absent, along with `mask_cam.3mf` (which carries its geometry
+unchanged) and the designer's own product photographs.
+
+Get your own copy, save it beside these scripts as **`Sri_Lankan_Mask_2.3mf`**, then:
+
+```bash
+python build_all.py --force      # re-samples the donor and regenerates everything
+```
+
+Every derived file — the sampled grids, the mask, the cover, the stand and all the small
+parts — is reproduced from it. What lives here is the conversion: the parameters, the
+solid modelling, the measurement scripts, and the checkers that refuse to let it lie.
+
+---
+
 ## 1. The idea: carve the bay out of the relief, don't add a box to the back
 
 The donor looks like a thin shell and is not. Ray-sampling it shows **8–27 mm of solid
