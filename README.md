@@ -383,17 +383,30 @@ It lives in the **CAM waist**, which has
 
 ### Finding the pads — and WHICH of the two 5V pads to use
 
-CONFIRMED against the board in hand, 2026-08-20. It is a **column** down the back's left
-edge, not a row, but the sequence is as recorded — and the **square pad marks pin 1**:
+CONFIRMED against the board in hand (silkscreen **SP32S3 CAM V1.1**), 2026-08-20. It is a
+**column** down the back's left edge, not a row. Count from the corner mounting hole — the
+`5V` pad is the **first**, and the only one on the strip with a **square** outline rather
+than a circle. If the pad you are about to solder is round, it is the wrong pad.
 
 ```
    left edge, plated through-holes        middle, four flat SMD pads
    ────────────────────────────────       ──────────────────────────
-     5V    ← SQUARE pad, pin 1              GND   5V   47   48
-     GND                                          ↑
-     1     ← GPIO1                                same net, DO NOT USE
-     48
+   ○  mounting hole  (the corner)           GND   5V   47   48
+   ▣  5V   1st pad, SQUARE   ✅ live               ↑
+   ○  GND  2nd pad           ✅ ground             same net, DO NOT USE
+   ○  1    3rd pad  ⛔ GPIO1 — NOT THIS ONE
+   ○  48
+   ○  NC
+   ○  47
+   ○  14
+   ○  0
 ```
+
+⚠️ **"Square pad" and "the pad marked `1`" are different pads, and confusing them is the
+way this board gets killed.** A square outline is the PCB convention for the first pin of
+a connector — it is about the pad's SHAPE. The pad silkscreened `1` is GPIO1 — it is about
+the LABEL, and it is the third one down. This file used to say "the square pad is `5V`,
+pin 1", which collided the two ideas in one sentence and very nearly cost an S3.
 
 **Both `5V` pads are the same rail. Solder to the EDGE pair.** The reason is what each one
 sits beside:
@@ -408,8 +421,8 @@ through-holes whose only live neighbour is ground, so the worst case is a short 
 rather than a part you have destroyed. Through-holes also take wire strain, where a flat
 SMD pad lifts.
 
-⚠️ The pad marked **`1` is GPIO1, not a power pin.** It is two below `5V` on the same
-column and is the easy one to hit by mistake.
+⚠️ The pad marked **`1` is GPIO1, not a power pin** — a signal pin on a 3.3 V part, and
+5 V into it kills the S3. It sits two below `5V` on the same column.
 
 ---
 
