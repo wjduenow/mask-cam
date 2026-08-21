@@ -21,6 +21,19 @@
 #define MC_DEFAULT_QUALITY    12               // 0 best .. 63 worst
 #define MC_DEFAULT_FPS        10
 
+// Image orientation. The camera module ends up clamped into the mask's pocket
+// lens-forward, which puts the sensor in upside down -- the bench image came
+// out inverted, scene and all.
+//
+// A 180 degree rotation needs BOTH axes. Setting only vflip turns the picture
+// the right way up and leaves it MIRRORED, which is the sort of thing you do
+// not notice until you try to read something in the footage.
+//
+// These are only the defaults: the live values are kept in NVS, so whatever
+// you settle on in the UI survives a reboot, a power cut and an OTA.
+#define MC_DEFAULT_VFLIP      1
+#define MC_DEFAULT_HMIRROR    1
+
 // The sensor can go to QXGA (2048x1536) -- it is an OV3660, not the OV2640 the
 // main README's optics section assumes. Left available, not default.
 #define MC_MAX_FRAMESIZE      FRAMESIZE_QXGA

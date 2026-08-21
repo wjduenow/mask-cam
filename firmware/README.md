@@ -129,6 +129,26 @@ Ring mode has to answer "which is oldest" at all times, including the seconds af
 when there is no clock yet, and neither obvious answer survives that — see the note in
 `recorder.cpp`. One NVS write per boot, not per clip.
 
+## Which way is up
+
+The module goes into the mask's pocket lens-forward, which puts the sensor in upside down —
+the bench image came out inverted, scene and all. Both defaults are therefore **on**:
+
+```c
+#define MC_DEFAULT_VFLIP      1
+#define MC_DEFAULT_HMIRROR    1
+```
+
+**A 180° rotation needs both axes.** Setting only `vflip` turns the picture the right way
+up and leaves it **mirrored** — which nobody notices until they try to read something in
+the footage. The way to tell the two apart without any text in frame is to watch what
+crosses the frame: under a real 180° rotation, something on the left must end up on the
+right. Verified that way here.
+
+Live values live in **NVS**, not just in the build, so whatever you settle on survives a
+power cut and every OTA. Two checkboxes in the UI (`flip ↕` / `mirror ↔`), or
+`/config?vflip=1&hmirror=1`, and `/health` reports both.
+
 ## Updating it over the air — and why that is not optional
 
 ⚠️ **Once the cover is on there is no wired path to this chip.** The USB-C that reaches
@@ -352,8 +372,6 @@ retrieval matters, pull the card; USB is ten times faster than this link.
   assumption about a part we have no number for. One photograph through the finished
   aperture retires it. The OV3660 also reaches **QXGA 2048×1536**, a step above the UXGA
   the selftest uses and available in the UI.
-- **Which way is up.** The sensor's orientation has not been checked against how the mask
-  hangs. `vflip`/`hmirror` are one line in `capture_begin()` once the thing is mounted.
 - **The "no clock" naming branch has never actually run.** Every reset available here keeps
   the RTC alive, so the first clip of each boot still gets a real timestamp. A cold start
   from dead battery should produce `…_noclock.avi`; that path is reasoned, not observed.

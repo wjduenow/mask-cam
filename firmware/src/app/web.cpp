@@ -71,6 +71,8 @@ a{color:#7fb2ff}
     <option value=20>20</option></select></label>
   <label><input type=checkbox id=ring> ring — <b>deletes oldest</b> to make room</label>
   <label><input type=checkbox id=mot> motion</label>
+  <label><input type=checkbox id=vf> flip ↕</label>
+  <label><input type=checkbox id=hm> mirror ↔</label>
 </div>
 <details id=tune><summary style="cursor:pointer;font-size:13px;opacity:.7">motion tuning</summary>
 <div class=row style="font-size:13px">
@@ -162,6 +164,11 @@ $('#rec').onclick=async()=>{ const on=$('#rec').className!=='on';
 $('#snap').onclick=()=>window.open('/still','_blank');
 $('#ring').onchange=()=>fetch('/config?ring='+($('#ring').checked?1:0));
 $('#mot').onchange=()=>fetch('/config?mot='+($('#mot').checked?1:0));
+// Both together is a 180 degree rotation, which is what an upside-down sensor
+// needs. Only one of them leaves the picture mirrored.
+const flip=()=>fetch('/config?vflip='+($('#vf').checked?1:0)
+                    +'&hmirror='+($('#hm').checked?1:0));
+$('#vf').onchange=flip; $('#hm').onchange=flip;
 $('#mapply').onclick=async()=>{
   await fetch('/config?mot_diff='+$('#md').value+'&mot_min='+$('#mn').value
              +'&mot_pct='+$('#mp').value+'&mot_hz='+$('#mh').value);
@@ -201,6 +208,7 @@ const _poll=poll;
 poll=async function(){ await _poll();
   try{ const h=await (await fetch('/health')).json();
     $('#mot').checked=h.mot;
+    $('#vf').checked=!!h.vflip; $('#hm').checked=!!h.hmirror;
     $('#mlive').textContent='live: '+h.mot_blocks+'/'+h.mot_total+' blocks, '+h.mot_ms+' ms';
     if(!tuned){ $('#md').value=h.mot_diff; $('#mn').value=h.mot_min;
                 $('#mp').value=h.mot_pct;  $('#mh').value=h.mot_hz; tuned=true; }
@@ -263,6 +271,7 @@ static esp_err_t h_health(httpd_req_t *r) {
   j += ",\"w\":" + String(c.width) + ",\"h\":" + String(c.height);
   j += ",\"fps\":" + String(c.fps_actual, 1);
   j += ",\"fps_target\":" + String(c.fps_target);
+  j += ",\"vflip\":" + String(c.vflip) + ",\"hmirror\":" + String(c.hmirror);
   j += ",\"frames\":" + String(c.frames) + ",\"cam_fails\":" + String(c.fails);
   j += ",\"armed\":" + String(s.armed ? "true" : "false");
   j += ",\"ring\":" + String(s.ring ? "true" : "false");
@@ -340,6 +349,13 @@ static esp_err_t h_config(httpd_req_t *r) {
   if (query_int(r, "quality", &v))   capture_set_quality(v);
   if (query_int(r, "fps", &v))       capture_set_fps(v);
   if (query_int(r, "ring", &v))      recorder_set_ring(v != 0);
+  {
+    CapStats c; capture_stats(&c);
+    int vf = c.vflip, hm = c.hmirror, touched = 0;
+    if (query_int(r, "vflip", &v))   { vf = v; touched = 1; }
+    if (query_int(r, "hmirror", &v)) { hm = v; touched = 1; }
+    if (touched) capture_set_flip(vf, hm);
+  }
   if (query_int(r, "mot", &v))       motion_set_enabled(v != 0);
   {
     int bd, mb, gp, hz; motion_get_params(&bd, &mb, &gp, &hz);

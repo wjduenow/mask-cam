@@ -7,6 +7,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <Preferences.h>
 
 static CapStats st;
 static volatile bool paused = false;
@@ -65,6 +66,22 @@ bool capture_begin() {
 
   sensor_t *s = esp_camera_sensor_get();
   st.sensor_pid = s->id.PID;
+
+  // Orientation from NVS, falling back to the compiled default the first time.
+  {
+    Preferences nvs;
+    int vf = MC_DEFAULT_VFLIP, hm = MC_DEFAULT_HMIRROR;
+    if (nvs.begin("maskcam", true)) {
+      vf = nvs.getUChar("vflip", MC_DEFAULT_VFLIP);
+      hm = nvs.getUChar("hmirror", MC_DEFAULT_HMIRROR);
+      nvs.end();
+    }
+    s->set_vflip(s, vf);
+    s->set_hmirror(s, hm);
+    st.vflip = vf; st.hmirror = hm;
+    Serial.printf("[cam] orientation: vflip %d, hmirror %d%s\n", vf, hm,
+                  (vf && hm) ? "  (180 degrees)" : "");
+  }
   st.framesize  = MC_DEFAULT_FRAMESIZE;
   st.quality    = MC_DEFAULT_QUALITY;
   st.fps_target = MC_DEFAULT_FPS;
@@ -174,6 +191,24 @@ void capture_set_fps(int fps) {
 void capture_set_paused(bool p) {
   paused = p;
   st.running = !p;
+}
+
+void capture_set_flip(int vflip, int hmirror) {
+  sensor_t *s = esp_camera_sensor_get();
+  if (!s) return;
+  vflip = vflip ? 1 : 0;
+  hmirror = hmirror ? 1 : 0;
+  s->set_vflip(s, vflip);
+  s->set_hmirror(s, hmirror);
+  st.vflip = vflip; st.hmirror = hmirror;
+
+  Preferences nvs;
+  if (nvs.begin("maskcam", false)) {
+    nvs.putUChar("vflip", vflip);
+    nvs.putUChar("hmirror", hmirror);
+    nvs.end();
+  }
+  Serial.printf("[cam] orientation set: vflip %d, hmirror %d\n", vflip, hmirror);
 }
 
 void capture_stats(CapStats *out) { *out = st; }

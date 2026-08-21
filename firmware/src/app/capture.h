@@ -22,6 +22,7 @@ struct CapStats {
   uint32_t   fails;        // esp_camera_fb_get() returned nothing
   uint32_t   last_len;
   uint16_t   sensor_pid;
+  uint8_t    vflip, hmirror;
 };
 
 bool capture_begin();
@@ -36,6 +37,11 @@ size_t capture_max_frame_bytes();
 bool capture_set_framesize(framesize_t fs);
 bool capture_set_quality(int q);
 void capture_set_fps(int fps);
+
+// Orientation, persisted to NVS. The mask hangs on a wall and reboots on every
+// OTA; a flip that reset itself each time would be found again by whoever next
+// looked at the footage upside down.
+void capture_set_flip(int vflip, int hmirror);
 
 // Stand the pump down. Writing the app partition stalls the cache, and a
 // camera DMA plus PSRAM traffic through that is asking for a corrupt frame or
