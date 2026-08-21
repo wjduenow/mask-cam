@@ -47,11 +47,14 @@ static void console_status() {
                 capture_sensor_name(), c.width, c.height, c.fps_actual,
                 c.fps_target, c.frames, c.fails);
   Serial.printf("record  %s  %s  %u frames  %.2f MB\n",
-                s.armed ? "ARMED" : "idle", s.clip[0] ? s.clip : "-",
+                s.armed ? "ARMED" : (s.paused_for_space ? "PAUSED (no room)" : "idle"),
+                s.clip[0] ? s.clip : "-",
                 s.clip_frames, s.clip_bytes / 1048576.0);
-  Serial.printf("card    %llu MB free of %llu  |  %u clips  |  write %u ms last, %u ms worst\n",
+  Serial.printf("card    %llu MB free of %llu  |  %u written, %u ring-deleted  |  write %u/%u ms\n",
                 (unsigned long long)s.card_free_mb, (unsigned long long)s.card_total_mb,
-                s.clips_written, s.write_ms_last, s.write_ms_max);
+                s.clips_written, s.clips_deleted, s.write_ms_last, s.write_ms_max);
+  Serial.printf("ring    %s\n", s.ring ? "ON -- oldest clips are deleted to make room"
+                                        : "off -- recording stops when the card fills");
   Serial.printf("queue   %u/%u slots in use  |  %u frames dropped\n",
                 s.queue_depth, MC_REC_QUEUE_SLOTS, s.frames_dropped);
   Serial.printf("net     %s  %s  rssi %d\n",
@@ -144,12 +147,28 @@ void setup() {
     while (true) delay(1000);
   }
 
-  if (recorder_begin()) recorder_start_writer();
-  else Serial.println("!! no microSD. Streaming will work; recording will not.");
+  if (recorder_begin()) {
+    recorder_start_writer();
+    recorder_start_housekeeper();
+    // Armed here, and the capture pump starts before the network below, so
+    // the first frame is on the card seconds after power -- not twenty
+    // seconds later when the join finishes. On a cold start there is no clock
+    // yet, so that first clip is named "noclock"; its sequence number still
+    // places it correctly against everything else on the card.
+    if (MC_RECORD_ON_BOOT && recorder_arm())
+      Serial.println("[rec] armed on boot");
+  } else {
+    Serial.println("!! no microSD. Streaming will work; recording will not.");
+  }
+
+  // The pump goes BEFORE the network, and this is the whole point of arming on
+  // boot. Joining a WiFi network takes twenty seconds when it works and twenty
+  // seconds when it does not, and no frame exists until the pump is running --
+  // so starting it after the join threw away exactly the moment that recording
+  // on boot is meant to catch. Nothing here needs an IP address.
+  capture_start_pump();
 
   wifi_connect();
-
-  capture_start_pump();
 
   if (!web_begin())
     Serial.println("!! http server did not start");

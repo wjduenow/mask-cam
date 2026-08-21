@@ -33,18 +33,46 @@
 // --- recording -------------------------------------------------------------
 // Clips rather than one endless file: a power cut truncates the clip being
 // written and nothing else. 60 s also keeps the in-memory AVI index small.
-#define MC_CLIP_SECONDS       60
+// How often an open clip is made real on the card -- header sizes patched and
+// the directory entry synced. This is the worst case a power cut can cost you.
+#define MC_SYNC_SECONDS       5
+
+#ifndef MC_CLIP_SECONDS
+#  define MC_CLIP_SECONDS     60
+#endif
 #define MC_REC_DIR            "/DCIM"
 
-// Stop recording with this much left, so the filesystem never runs to zero
-// while a write is in flight.
-#define MC_FREE_FLOOR_MB      256
+// This is a set-and-forget wall camera: it arms itself as soon as the card is
+// mounted, so a power cut cannot leave it streaming happily and recording
+// nothing. Turn it off here if you would rather press the button yourself.
+#define MC_RECORD_ON_BOOT     true
 
-// Ring mode -- delete the oldest clip to make room -- is OFF by default. A
-// camera that quietly destroys yesterday's footage to record today's is a
-// reasonable thing to want and a terrible thing to do without being asked.
-// Toggle it in the web UI.
-#define MC_DEFAULT_RING       false
+// Ring mode -- delete the oldest clip to make room -- is ON to match. The card
+// then holds a rolling window, roughly 30 hours at SVGA/10 fps, and never
+// fills. This DESTROYS the oldest footage by design; the UI says so and the
+// checkbox turns it off.
+#define MC_DEFAULT_RING       true
+
+// Two water marks, not one.
+//   TARGET  housekeeping keeps free space above this, deleting oldest first.
+//   FLOOR   the writer's hard stop, if housekeeping ever falls behind.
+// Keeping them apart means deletion happens on a background task, well before
+// the recorder is in trouble, instead of in the middle of a frame write.
+// Overridable from the build so the ring can be exercised on demand: setting
+// TARGET just below the card's free space makes it fill in seconds instead of
+// thirty hours. See firmware/README.md, "Testing the ring".
+#ifndef MC_FREE_TARGET_MB
+#  define MC_FREE_TARGET_MB   512
+#endif
+#ifndef MC_FREE_FLOOR_MB
+#  define MC_FREE_FLOOR_MB    256
+#endif
+
+// Deleting scans the directory, and a 29 GB card holds ~1800 clips. Doing that
+// once per deletion would put a long directory walk between frames every
+// minute, so a scan collects this many victims at once and the next fifteen
+// deletions are free.
+#define MC_RING_BATCH         16
 
 // Frames waiting to go onto the card. MEASURED on this board: a single SD
 // write in 1-bit mode usually takes a few ms but spikes to 240. With the write

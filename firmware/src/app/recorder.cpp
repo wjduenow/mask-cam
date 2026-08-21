@@ -23,6 +23,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <Preferences.h>
 
 #include "../board_pins.h"
 
@@ -33,6 +34,7 @@ static const size_t AVI_HDR_LEN        = 224;
 static const size_t OFF_RIFF_SIZE      = 4;    // filesize - 8
 static const size_t OFF_USEC_PER_FRAME = 32;
 static const size_t OFF_MAX_BYTES_SEC  = 36;
+static const size_t OFF_FLAGS          = 44;
 static const size_t OFF_TOTAL_FRAMES   = 48;
 static const size_t OFF_SUGG_BUF       = 60;
 static const size_t OFF_WIDTH          = 64;
@@ -51,6 +53,7 @@ static File     clip;
 static uint8_t *index_buf = nullptr;   // 16 bytes per frame, in PSRAM
 static uint32_t index_n   = 0;
 static uint32_t clip_started_ms = 0;
+static uint32_t last_sync_ms = 0;
 static uint32_t space_checked_ms = 0;
 static portMUX_TYPE st_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -81,7 +84,9 @@ static void build_header(uint8_t *h, uint16_t w, uint16_t hgt, uint8_t fps) {
   fourcc(h + 24, "avih");
   wr32  (h + 28, 56);
   wr32  (h + OFF_USEC_PER_FRAME, 1000000UL / (fps ? fps : 1));
-  wr32  (h + 44, 0x10);                       // AVIF_HASINDEX
+  // AVIF_HASINDEX is deliberately NOT set here. It goes on at close, once the
+  // index actually exists -- so a clip cut short by a power failure does not
+  // advertise an index that was never written.
   wr32  (h + 56, 1);                          // one stream
   wr32  (h + OFF_WIDTH,  w);
   wr32  (h + OFF_HEIGHT, hgt);
@@ -113,25 +118,66 @@ static void build_header(uint8_t *h, uint16_t w, uint16_t hgt, uint8_t fps) {
   fourcc(h + MOVI_LIST_POS, "movi");
 }
 
+// --- naming, and why every clip carries a number ---------------------------
+//
+// Ring mode deletes the oldest clip, so "which is oldest" has to be answerable
+// at all times, including the twenty seconds after every boot when WiFi has
+// not connected and there is no clock. Neither obvious answer survives that:
+//
+//   by filename   two schemes coexist, and "20260821-055559.avi" sorts BELOW
+//                 "clip0001.avi" because '2' < 'c' -- the ring would eat the
+//                 newest footage first.
+//   by mtime      clips written before NTP answers carry 1970, so the first
+//                 clip of EVERY boot looks like the oldest thing on the card
+//                 and is deleted first. That is the moment the power came
+//                 back, which is often the moment you wanted.
+//
+// So each clip gets a monotonic sequence number of its own, ahead of the
+// timestamp: boot count from NVS, times 100000, plus the clip index within
+// this boot. Names then sort chronologically by plain strcmp forever, with or
+// without a clock, and nothing has to open a file to find out how old it is.
+//
+//   000200017_20260821-055559.avi    boot 2, clip 17, clock known
+//   000200000_noclock.avi            boot 2, clip 0, before NTP answered
+//
+// One NVS write per boot, not per clip -- a counter bumped 1440 times a day
+// would be a flash-wear problem all of its own.
+
+static uint32_t boot_count = 0;
+static uint32_t clip_index = 0;
+
+static void load_boot_count() {
+  Preferences nvs;
+  if (!nvs.begin("maskcam", false)) { boot_count = 0; return; }
+  boot_count = nvs.getUInt("boot", 0) + 1;
+  if (boot_count > 9999) boot_count = 1;      // 27 years of daily reboots
+  nvs.putUInt("boot", boot_count);
+  nvs.end();
+}
+
+// The sequence a filename claims. Anything that does not carry one -- a clip
+// from an older firmware, a file dropped on the card by hand -- reads as 0,
+// which makes it the oldest and therefore the first to go.
+static uint32_t seq_of(const char *name) {
+  for (int i = 0; i < 9; i++)
+    if (name[i] < '0' || name[i] > '9') return 0;
+  if (name[9] != '_') return 0;
+  return (uint32_t)strtoul(String(name).substring(0, 9).c_str(), nullptr, 10);
+}
+
 static void make_clip_name(char *out, size_t n) {
-  // A real timestamp if NTP answered, a counter if it did not. Either is fine;
-  // silently writing 1970 all over the card is not.
+  uint32_t seq = boot_count * 100000 + (clip_index > 99999 ? 99999 : clip_index);
+  clip_index++;
+
   time_t now = time(nullptr);
   struct tm tm_now;
-  if (now > 1600000000 && localtime_r(&now, &tm_now)) {
-    strftime(out, n, MC_REC_DIR "/%Y%m%d-%H%M%S.avi", &tm_now);
-    return;
-  }
+  char stamp[24];
+  if (now > 1600000000 && localtime_r(&now, &tm_now))
+    strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tm_now);
+  else
+    snprintf(stamp, sizeof(stamp), "noclock");
 
-  // No clock. The counter cannot just start from clips_written, because that
-  // resets at every boot -- which had this overwriting clip0001.avi on the
-  // second power-up, destroying the first recording without a word. Ask the
-  // card what already exists instead.
-  for (unsigned i = st.clips_written + 1; i < 10000; i++) {
-    snprintf(out, n, MC_REC_DIR "/clip%04u.avi", i);
-    if (!SD_MMC.exists(out)) return;
-  }
-  snprintf(out, n, MC_REC_DIR "/clip9999.avi");   // card is absurdly full of clips
+  snprintf(out, n, MC_REC_DIR "/%09u_%s.avi", (unsigned)seq, stamp);
 }
 
 // --- space -----------------------------------------------------------------
@@ -144,42 +190,69 @@ void recorder_refresh_space() {
   space_checked_ms = millis();
 }
 
-// Oldest clip by the card's own modification time, NOT by name.
-//
-// Names sort chronologically within either scheme but not across them, and a
-// card that has both -- clips recorded before NTP answered, then clips named
-// by wall clock -- sorts "20260821-055559.avi" BELOW "clip0001.avi", because
-// '2' < 'c'. By name, ring mode would delete the newest footage first. This is
-// the one path here that destroys data, so it asks the filesystem instead:
-// clips written before the clock was set carry a 1970 timestamp, which makes
-// them genuinely the oldest, which is exactly right.
-static bool delete_oldest_clip() {
+// The victims list. A 29 GB card holds around 1800 sixty-second clips, and
+// walking that directory is not something to do between two frame writes. One
+// scan collects the MC_RING_BATCH oldest, and the next fifteen deletions cost
+// nothing.
+static char ring_cache[MC_RING_BATCH][80];
+static int  ring_n = 0, ring_i = 0;
+
+static void ring_invalidate() { ring_n = ring_i = 0; }
+
+static void ring_scan() {
+  ring_invalidate();
   File dir = SD_MMC.open(MC_REC_DIR);
-  if (!dir) return false;
-  char oldest[64] = "";
-  time_t oldest_t = 0;
+  if (!dir) return;
+
+  uint32_t seqs[MC_RING_BATCH];
   for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
     const char *n = f.name();
     const char *base = strrchr(n, '/');
     if (base) n = base + 1;
-    if (!f.isDirectory() && strstr(n, ".avi")) {
-      time_t t = f.getLastWrite();
-      if (!oldest[0] || t < oldest_t || (t == oldest_t && strcmp(n, oldest) < 0)) {
-        oldest_t = t;
-        snprintf(oldest, sizeof(oldest), "%s", n);
-      }
-    }
+    bool isdir = f.isDirectory();
     f.close();
+    if (isdir || !strstr(n, ".avi")) continue;
+
+    uint32_t sq = seq_of(n);
+    // Keep the MC_RING_BATCH smallest sequences, in order. Insertion sort:
+    // the array is tiny and this runs once per sixteen deletions.
+    int pos = ring_n;
+    while (pos > 0 && seqs[pos - 1] > sq) pos--;
+    if (pos >= MC_RING_BATCH) continue;
+    for (int k = (ring_n < MC_RING_BATCH ? ring_n : MC_RING_BATCH - 1); k > pos; k--) {
+      seqs[k] = seqs[k - 1];
+      memcpy(ring_cache[k], ring_cache[k - 1], sizeof(ring_cache[0]));
+    }
+    seqs[pos] = sq;
+    snprintf(ring_cache[pos], sizeof(ring_cache[0]), "%s", n);
+    if (ring_n < MC_RING_BATCH) ring_n++;
   }
   dir.close();
-  if (!oldest[0]) return false;
+}
 
-  char path[96];
-  snprintf(path, sizeof(path), MC_REC_DIR "/%s", oldest);
-  bool ok = SD_MMC.remove(path);
-  Serial.printf("[rec] ring: %s %s\n", ok ? "deleted" : "FAILED to delete", path);
-  if (ok) recorder_refresh_space();
-  return ok;
+// Delete the oldest clip on the card. Never the one being written -- that is
+// the newest by construction, so it cannot be at the front of the list, but
+// the check is cheap and the consequence of getting it wrong is a corrupt
+// recording.
+static bool delete_oldest_clip() {
+  if (ring_i >= ring_n) ring_scan();
+  while (ring_i < ring_n) {
+    const char *name = ring_cache[ring_i++];
+    if (st.clip[0] && !strcmp(name, st.clip)) continue;
+
+    char path[96];
+    snprintf(path, sizeof(path), MC_REC_DIR "/%s", name);
+    if (SD_MMC.remove(path)) {
+      Serial.printf("[rec] ring: deleted %s\n", path);
+      st.clips_deleted++;
+      recorder_refresh_space();
+      return true;
+    }
+    Serial.printf("[rec] ring: FAILED to delete %s\n", path);
+    ring_invalidate();       // the list is stale; rescan next time
+    return false;
+  }
+  return false;              // nothing left to delete
 }
 
 // --- clip open / close -----------------------------------------------------
@@ -203,9 +276,38 @@ static bool open_clip(uint16_t w, uint16_t h, uint8_t fps) {
   st.clip_frames = 0;
   st.clip_bytes  = AVI_HDR_LEN;
   index_n = 0;
-  clip_started_ms = millis();
+  clip_started_ms = last_sync_ms = millis();
   Serial.printf("[rec] -> %s  (%ux%u @ %u fps)\n", st.clip, w, h, fps);
   return true;
+}
+
+// Write into the header the things it could not know when it was written.
+//
+// This runs periodically, not only at close, and that is the difference
+// between a power cut costing you the last few seconds and costing you the
+// whole minute. Until a size lands in the header and the directory entry is
+// synced, the file on the card is zero bytes long -- which is exactly what an
+// interrupted clip looked like before: not truncated, GONE.
+static void patch_sizes(bool final, uint32_t movi_end) {
+  uint32_t file_end = clip.position();
+
+  uint32_t fps_actual = 0;
+  uint32_t elapsed = millis() - clip_started_ms;
+  if (elapsed > 0) fps_actual = (uint32_t)((uint64_t)st.clip_frames * 1000 / elapsed);
+  if (!fps_actual) fps_actual = 1;
+
+  uint8_t v[4];
+  clip.seek(OFF_RIFF_SIZE);      wr32(v, file_end - 8);            clip.write(v, 4);
+  clip.seek(OFF_USEC_PER_FRAME); wr32(v, 1000000UL / fps_actual);  clip.write(v, 4);
+  clip.seek(OFF_TOTAL_FRAMES);   wr32(v, st.clip_frames);          clip.write(v, 4);
+  clip.seek(OFF_STRH_RATE);      wr32(v, fps_actual);              clip.write(v, 4);
+  clip.seek(OFF_STRH_LENGTH);    wr32(v, st.clip_frames);          clip.write(v, 4);
+  clip.seek(OFF_MOVI_SIZE);      wr32(v, movi_end - MOVI_LIST_POS); clip.write(v, 4);
+  // Only now, with an index really on disk, may the header claim to have one.
+  if (final) { clip.seek(OFF_FLAGS); wr32(v, 0x10); clip.write(v, 4); }
+
+  clip.seek(file_end);           // back to where the next frame goes
+  clip.flush();                  // f_sync: puts the size in the directory entry
 }
 
 static void close_clip() {
@@ -222,29 +324,13 @@ static void close_clip() {
     clip.write(tag, 8);
     clip.write(index_buf, index_n * 16);
   }
-  uint32_t file_end = clip.position();
 
-  // Patch everything the header could not know when it was written.
-  uint32_t fps_actual = 0;
-  uint32_t elapsed = millis() - clip_started_ms;
-  if (elapsed > 0) fps_actual = (uint32_t)((uint64_t)st.clip_frames * 1000 / elapsed);
-  if (!fps_actual) fps_actual = 1;
-
-  uint8_t v[4];
-  clip.seek(OFF_RIFF_SIZE);    wr32(v, file_end - 8);            clip.write(v, 4);
-  clip.seek(OFF_USEC_PER_FRAME); wr32(v, 1000000UL / fps_actual); clip.write(v, 4);
-  clip.seek(OFF_TOTAL_FRAMES); wr32(v, st.clip_frames);          clip.write(v, 4);
-  clip.seek(OFF_STRH_RATE);    wr32(v, fps_actual);              clip.write(v, 4);
-  clip.seek(OFF_STRH_LENGTH);  wr32(v, st.clip_frames);          clip.write(v, 4);
-  clip.seek(OFF_MOVI_SIZE);    wr32(v, movi_end - MOVI_LIST_POS); clip.write(v, 4);
-
-  clip.flush();
+  patch_sizes(true, movi_end);
   clip.close();
 
   st.clips_written++;
-  Serial.printf("[rec] closed %s: %u frames, %llu bytes, %u fps measured\n",
-                st.clip, (unsigned)st.clip_frames,
-                (unsigned long long)file_end, (unsigned)fps_actual);
+  Serial.printf("[rec] closed %s: %u frames, %.2f MB\n",
+                st.clip, (unsigned)st.clip_frames, st.clip_bytes / 1048576.0);
   st.clip[0] = 0;
   recorder_refresh_space();
 }
@@ -267,10 +353,42 @@ bool recorder_begin() {
     return false;
   }
 
+  load_boot_count();
+  Serial.printf("[rec] boot #%u -- clips this boot are numbered %09u and up\n",
+                (unsigned)boot_count, (unsigned)(boot_count * 100000));
+
   index_buf = (uint8_t *)ps_malloc(MC_MAX_CLIP_FRAMES * 16);
   if (!index_buf) { fail("no PSRAM for the AVI index"); return false; }
 
   st.mounted = true;
+
+  // A power cut leaves the clip that was being written unclosed. With periodic
+  // syncing most of those are playable, but one cut in the first second leaves
+  // a file with a header and nothing else -- or nothing at all. Sweep them:
+  // they are unplayable by definition, and an always-on camera behind a
+  // screwed-down cover would otherwise collect one per power blip forever.
+  {
+    File dir = SD_MMC.open(MC_REC_DIR);
+    if (dir) {
+      char victims[16][80];
+      int n = 0;
+      for (File f = dir.openNextFile(); f && n < 16; f = dir.openNextFile()) {
+        const char *nm = f.name(); const char *b = strrchr(nm, '/');
+        if (b) nm = b + 1;
+        bool junk = !f.isDirectory() && strstr(nm, ".avi") && f.size() < 4096;
+        if (junk) snprintf(victims[n++], sizeof(victims[0]), "%s", nm);
+        f.close();
+      }
+      dir.close();
+      for (int i = 0; i < n; i++) {
+        char path[96];
+        snprintf(path, sizeof(path), MC_REC_DIR "/%s", victims[i]);
+        if (SD_MMC.remove(path))
+          Serial.printf("[rec] swept empty clip %s\n", victims[i]);
+      }
+    }
+  }
+
   recorder_refresh_space();
   Serial.printf("[rec] card %llu MB, %llu MB free\n",
                 (unsigned long long)st.card_total_mb,
@@ -283,6 +401,7 @@ void recorder_set_ring(bool on) { st.ring = on; }
 
 bool recorder_arm() {
   if (!st.mounted) { fail("cannot record, no card mounted"); return false; }
+  st.paused_for_space = false;
   if (st.armed) return true;
   st.last_error[0] = 0;
   st.armed = true;          // the pump opens the clip; it knows the frame size
@@ -290,6 +409,7 @@ bool recorder_arm() {
 }
 
 void recorder_disarm() {
+  st.paused_for_space = false;    // a deliberate stop is not a paused one
   if (!st.armed) return;
   st.armed = false;
   // The writer owns the file. Let it drain what is queued and close the clip
@@ -304,12 +424,16 @@ static void write_frame(const uint8_t *jpeg, size_t len, uint16_t w, uint16_t h,
   // Free space is a syscall, so check it on a timer rather than per frame.
   if (millis() - space_checked_ms > 5000) recorder_refresh_space();
 
+  // Deleting happens on the housekeeping task, well above this point. Getting
+  // here means housekeeping could not keep up -- or ring mode is off and the
+  // card is simply full -- so stop, and say which.
   if (st.card_free_mb < MC_FREE_FLOOR_MB) {
-    if (!st.ring || !delete_oldest_clip()) {
-      fail("card down to %llu MB, stopping", (unsigned long long)st.card_free_mb);
-      st.armed = false;      // writer_task closes the clip once the queue drains
-      return;
-    }
+    fail(st.ring ? "card down to %llu MB and housekeeping cannot keep up, pausing"
+                 : "card down to %llu MB and ring mode is off, stopping",
+         (unsigned long long)st.card_free_mb);
+    st.paused_for_space = st.ring;   // housekeeping re-arms if it can free room
+    st.armed = false;                // writer_task closes the clip as it drains
+    return;
   }
 
   // Roll to a new clip on time or when the index is full.
@@ -354,6 +478,13 @@ static void write_frame(const uint8_t *jpeg, size_t len, uint16_t w, uint16_t h,
 
   st.clip_frames++;
   st.clip_bytes += len + 8 + (len & 1);
+
+  // Every few seconds, make the clip real on the card. Costs a handful of
+  // seeks and one f_sync; buys a playable file if the power goes.
+  if (millis() - last_sync_ms >= MC_SYNC_SECONDS * 1000UL) {
+    last_sync_ms = millis();
+    patch_sizes(false, clip.position());
+  }
 }
 
 // --- the writer task -------------------------------------------------------
@@ -418,6 +549,50 @@ void recorder_start_writer() {
   xTaskCreatePinnedToCore(writer_task, "recwrite", 8192, nullptr, 4, nullptr, 0);
 }
 
+// --- housekeeping ----------------------------------------------------------
+//
+// Keeping room on the card is a background job, not something to do between
+// two frame writes. This runs well above the writer's hard floor, so by the
+// time the recorder could be in trouble there is already space. It also
+// re-arms recording if the card filled while ring mode was off and somebody
+// has since made room -- "always recording" should mean it.
+
+static void housekeeper_task(void *) {
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    if (!st.mounted) continue;
+
+    recorder_refresh_space();
+
+    if (st.ring && st.card_free_mb < MC_FREE_TARGET_MB) {
+      // Bounded: one pass frees at most this many clips, so a card that is
+      // full of something other than clips cannot spin here forever.
+      int freed = 0;
+      while (st.card_free_mb < MC_FREE_TARGET_MB && freed < 64) {
+        if (!delete_oldest_clip()) break;
+        freed++;
+      }
+      if (freed)
+        Serial.printf("[rec] housekeeping freed %d clip(s), %llu MB free\n",
+                      freed, (unsigned long long)st.card_free_mb);
+    }
+
+    // Recording stopped because the card filled, and there is room again.
+    if (st.paused_for_space && !st.armed && st.card_free_mb >= MC_FREE_TARGET_MB) {
+      st.paused_for_space = false;
+      st.last_error[0] = 0;
+      st.armed = true;
+      Serial.println("[rec] room again, recording resumed");
+    }
+  }
+}
+
+void recorder_start_housekeeper() {
+  // Low priority and off the capture core: nothing here is urgent, and a
+  // directory walk must never be what makes the camera miss a frame.
+  xTaskCreatePinnedToCore(housekeeper_task, "rechouse", 4096, nullptr, 2, nullptr, 0);
+}
+
 void recorder_stats(RecStats *out) {
   portENTER_CRITICAL(&st_mux);
   *out = st;
@@ -453,7 +628,7 @@ bool recorder_delete(const char *name) {
   snprintf(path, sizeof(path), MC_REC_DIR "/%s", name);
   if (st.clip[0] && !strcmp(name, st.clip)) return false;   // not the live one
   bool ok = SD_MMC.remove(path);
-  if (ok) recorder_refresh_space();
+  if (ok) { ring_invalidate(); recorder_refresh_space(); }
   return ok;
 }
 
@@ -478,25 +653,27 @@ void recorder_print_listing() {
                 (unsigned)n, total / 1048576.0, (unsigned long long)st.card_free_mb);
 }
 
-// Newest by modification time, for the same reason delete_oldest_clip() is:
-// on a card carrying both naming schemes, "newest by name" is wrong.
+// Newest by sequence number -- the same ordering the ring deletes by, read
+// straight off the filename with nothing opened.
 bool recorder_newest_clip(char *out, size_t n) {
   if (!st.mounted) return false;
   File dir = SD_MMC.open(MC_REC_DIR);
   if (!dir) return false;
   char best[64] = "";
-  time_t best_t = 0;
+  uint32_t best_seq = 0;
   for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
     const char *nm = f.name(); const char *b = strrchr(nm, '/');
     if (b) nm = b + 1;
-    if (!f.isDirectory() && strstr(nm, ".avi")) {
-      time_t t = f.getLastWrite();
-      if (!best[0] || t > best_t || (t == best_t && strcmp(nm, best) > 0)) {
-        best_t = t;
-        snprintf(best, sizeof(best), "%s", nm);
-      }
-    }
+    bool isdir = f.isDirectory();
+    char keep[80];
+    snprintf(keep, sizeof(keep), "%s", nm);
     f.close();
+    if (isdir || !strstr(keep, ".avi")) continue;
+    uint32_t sq = seq_of(keep);
+    if (!best[0] || sq > best_seq || (sq == best_seq && strcmp(keep, best) > 0)) {
+      best_seq = sq;
+      snprintf(best, sizeof(best), "%s", keep);
+    }
   }
   dir.close();
   if (!best[0]) return false;

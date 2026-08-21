@@ -24,7 +24,9 @@ Two environments:
 | microSD | 32 GB SDHC, mounts **1-bit**, write round-trips | selftest |
 | USB | the S3's **own** USB (`303a:1001`), no bridge chip | `lsusb` |
 | SVGA frame | 21–69 kB, mean **25 kB** at quality 12 | 454-frame clip |
-| sustained | **10.0 fps at 800×600 while recording**, 1.4 % dropped | 44 s run |
+| sustained | **10.0 fps at 800×600 while recording**, <1 % dropped | 44 s + 10 min runs |
+| clip size | ~8–16 MB per 60 s clip at SVGA/10 fps | the card |
+| WiFi join | 4 of 4 boots, ~3 s each, with the camera already running | reboot trials |
 | SD write | typically 40 ms, **worst 299 ms** | see "the queue" below |
 | card life | ~0.27 MB/s at SVGA/10 fps → **~30 h** on 32 GB | measured |
 | WiFi | joins, **−76 dBm** from the bench to the AP | `/health` |
@@ -48,6 +50,16 @@ $EDITOR src/secrets.h                      # gitignored; it never leaves this ma
 
 Then `http://mask-cam.local/` — live view, a record button, the clip list, and a health
 readout. The stream is on port **81**; the page knows this.
+
+**It records on its own.** The board arms itself as soon as the card mounts — before the
+network, so the first frame is on the card seconds after power rather than twenty seconds
+later — and keeps a **rolling window** by deleting the oldest clip when the card runs low.
+Roughly **30 hours** at SVGA/10 fps. Nothing has to be pressed, and a power cut cannot
+leave it streaming happily and recording nothing. Both behaviours are `#define`s in
+`config.h` (`MC_RECORD_ON_BOOT`, `MC_DEFAULT_RING`), and the ring has a checkbox in the UI.
+
+⚠️ **Ring mode destroys the oldest footage by design.** That is the point of it, but it is
+worth saying out loud: anything you want to keep has to come off the card.
 
 All of it was exercised against the board on 2026-08-21: the page, `/still` (800×600 JPEG),
 `/stream` (multipart, 27 frames in 10 s), `/rec` on and off, `/files`, `/download` and
@@ -96,10 +108,42 @@ When the queue fills, frames are **dropped and counted** rather than silently st
 the frame interval — a recording that quietly runs slow is worse than one that admits it
 lost four frames. `dropped` is on the health page for exactly this reason.
 
-**Clips, not one long file.** AVI stores sizes it cannot know until the file is finished,
-so the header goes down as zeroes and is patched at close. A clip that is never closed —
-power cut mid-write — will not play. Recording in 60 s clips makes the blast radius of a
-power cut the last minute rather than everything.
+**Clips, not one long file, and each one kept real on the card.** AVI stores sizes it
+cannot know until the file is finished, so the header goes down as zeroes and is patched
+at close. Patched *only* at close, an interrupted clip is not truncated — it is **zero
+bytes**, because nothing reaches the directory entry until then. Measured, not assumed:
+two 0-byte files turned up on the card after resets, and the README used to claim a power
+cut cost you the tail of a clip when it actually cost the whole minute.
+
+So the header is patched and the file synced every **5 s** while recording. A clip cut
+short by a power failure now plays up to the last sync: a simulated cut left a 7.4 MB file
+that ffprobe reads as 506 frames / 50.6 s and ffmpeg decodes without a single error.
+`AVIF_HASINDEX` is deliberately set only at close, so an interrupted clip never advertises
+an index that was never written. Anything still smaller than a header is swept at boot —
+an always-on camera behind a screwed-down cover would otherwise collect one dead file per
+power blip forever.
+
+**Every clip carries a sequence number.** `000700001_20260821-143808.avi` is boot 7, clip 1.
+Ring mode has to answer "which is oldest" at all times, including the seconds after boot
+when there is no clock yet, and neither obvious answer survives that — see the note in
+`recorder.cpp`. One NVS write per boot, not per clip.
+
+## Testing the ring
+
+The card holds ~30 hours, so waiting for it to fill is not a test. The water marks are
+overridable from the build — set the target just below what is actually free and the ring
+runs in seconds:
+
+```bash
+FREE=$(curl -s http://mask-cam.local/health | python3 -c "import json,sys;print(json.load(sys.stdin)['card_free_mb'])")
+PLATFORMIO_BUILD_FLAGS="-DMC_FREE_TARGET_MB=$((FREE-4)) -DMC_FREE_FLOOR_MB=$((FREE-40)) -DMC_CLIP_SECONDS=10" \
+  ~/.platformio/penv/bin/pio run -e mask-cam -t upload
+```
+
+Done here on 2026-08-21: it settled into deleting exactly one clip per clip written, oldest
+first, in strict sequence order, holding 10.0 fps throughout — and it deleted the previous
+boot's clips before the current boot's, which is the ordering the sequence prefix exists
+for. **Reflash without the flags afterwards.**
 
 ### ⚠ The radio is the bottleneck, not the board
 
@@ -148,12 +192,15 @@ retrieval matters, pull the card; USB is ten times faster than this link.
   pushes bulk data over USB has to loop on the return value; `serial_write_all()` does.
   `tools/board.py clip` checks the byte count against the size the board announced, and
   the board says `---ABORTED FILE---` rather than `---END FILE---` if it gave up.
-- **Never order clips by filename.** There are two naming schemes — wall-clock once NTP
-  answers, `clipNNNN.avi` before it — and `"20260821-055559.avi" < "clip0001.avi"` because
-  `'2' < 'c'`. Ring mode sorted by name would delete the NEWEST footage first. Both
-  `delete_oldest_clip()` and `recorder_newest_clip()` use the card's modification time,
-  which also gets the pre-NTP clips right: they carry a 1970 stamp, and they genuinely are
-  the oldest.
+- **Never order clips by wall-clock anything.** Ring mode deletes the oldest, so "which is
+  oldest" must be answerable in the seconds after boot when there is no clock. By filename,
+  two naming schemes coexist and `"20260821-…" < "clip0001.avi"` because `'2' < 'c'` — the
+  ring eats the newest first. By mtime, every boot's first clip carries 1970 and is deleted
+  first, and that is the moment the power came back. Both were tried; both were wrong. The
+  sequence prefix is the fix, and it costs one NVS write per boot.
+- **`File::flush()` is what makes a file exist.** Without it the size stays 0 in the
+  directory entry no matter how many megabytes have been written, and a reset loses all of
+  it. This is not an AVI quirk, it is FAT.
 - Under WSL the board arrives over `usbipd`. A reset re-enumerates it, and the attachment
   can drop with it.
 
@@ -167,6 +214,12 @@ retrieval matters, pull the card; USB is ten times faster than this link.
   the selftest uses and available in the UI.
 - **Which way is up.** The sensor's orientation has not been checked against how the mask
   hangs. `vflip`/`hmirror` are one line in `capture_begin()` once the thing is mounted.
+- **The "no clock" naming branch has never actually run.** Every reset available here keeps
+  the RTC alive, so the first clip of each boot still gets a real timestamp. A cold start
+  from dead battery should produce `…_noclock.avi`; that path is reasoned, not observed.
+- **`paused_for_space` is untested.** It only fires if ring mode is on and housekeeping
+  still cannot free room — a card full of something that is not clips. The resume path is
+  written and not exercised.
 - **Nothing has run on battery yet.** Streaming keeps the draw well above the DWEII boost's
   load-current threshold, which is the good case; what has not been tested is what happens
   to the queue and the card when the supply sags. Modem sleep is now off, which costs a

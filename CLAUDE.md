@@ -115,7 +115,10 @@ pulled off over USB and opened cleanly in ffprobe. **The sensor turned out to be
 not the OV2640 the README's optics section assumes** — flagged in both READMEs, not yet
 retired. WiFi, the web UI, the MJPEG stream and record/download/delete were all verified
 against the board on 2026-08-21; a clip pulled over HTTP and over USB came back
-byte-identical. **The radio is the bottleneck** — at −76 dBm the stream carries ~2.7 of the
+byte-identical. It **records on its own from boot and keeps a rolling ~30 h window**,
+deleting the oldest clip when the card runs low; clips carry a monotonic sequence prefix
+(`000700001_20260821-143808.avi`) because neither filename nor mtime gives a correct
+"oldest" across the clockless seconds after boot. **The radio is the bottleneck** — at −76 dBm the stream carries ~2.7 of the
 10 fps the sensor makes, and a 14 MB clip takes nine minutes to download. Untested:
 battery, and anything with the cover on.
 

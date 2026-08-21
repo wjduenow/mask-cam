@@ -12,6 +12,7 @@ struct RecStats {
   uint32_t clip_frames;
   uint64_t clip_bytes;
   uint32_t clips_written;
+  uint32_t clips_deleted;  // by ring mode, since boot
   uint32_t frames_dropped; // frames the card could not keep up with
   uint8_t  queue_depth;    // slots in use right now
   uint32_t write_ms_max;   // worst single write, ever -- a bad card shows up here
@@ -19,6 +20,7 @@ struct RecStats {
   uint64_t card_total_mb;
   uint64_t card_free_mb;
   bool     ring;           // delete oldest clip to make room?
+  bool     paused_for_space; // stopped because the card filled; will resume
   char     last_error[96];
 };
 
@@ -29,6 +31,7 @@ bool recorder_armed();
 void recorder_set_ring(bool on);
 
 void recorder_start_writer();        // the task that owns the card
+void recorder_start_housekeeper();   // the task that keeps room on the card
 
 // Called by the capture pump for every frame. Copies into a queue slot and
 // returns immediately -- the card is slow and bursty, and the camera must not

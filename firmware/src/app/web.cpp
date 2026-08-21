@@ -60,7 +60,7 @@ a{color:#7fb2ff}
     <option value=2>2</option><option value=5>5</option>
     <option value=10 selected>10</option><option value=15>15</option>
     <option value=20>20</option></select></label>
-  <label><input type=checkbox id=ring> ring (delete oldest when full)</label>
+  <label><input type=checkbox id=ring> ring — <b>deletes oldest</b> to make room</label>
 </div>
 <div id=stat></div>
 <div class=row><strong style="font-size:13px">recordings</strong>
@@ -78,7 +78,7 @@ async function poll(){
   try{
     const h=await (await fetch('/health')).json();
     $('#rec').className=h.armed?'on':'';
-    $('#rec').textContent=h.armed?'■ stop':'● record';
+    $('#rec').textContent=h.armed?'■ stop':(h.paused?'● paused':'● record');
     $('#ring').checked=h.ring;
     const tc=h.temp_c>70?'bad':h.temp_c>60?'warn':'';
     $('#badge').innerHTML=h.sensor+' · '+h.w+'×'+h.h+' · '+h.fps.toFixed(1)+' fps'
@@ -176,6 +176,8 @@ static esp_err_t h_health(httpd_req_t *r) {
   j += ",\"clip_frames\":" + String(s.clip_frames);
   j += ",\"clip_bytes\":" + String((uint32_t)s.clip_bytes);
   j += ",\"clips\":" + String(s.clips_written);
+  j += ",\"deleted\":" + String(s.clips_deleted);
+  j += ",\"paused\":" + String(s.paused_for_space ? "true" : "false");
   j += ",\"dropped\":" + String(s.frames_dropped);
   j += ",\"queue\":" + String(s.queue_depth);
   j += ",\"write_ms_last\":" + String(s.write_ms_last);
